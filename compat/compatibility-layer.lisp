@@ -55,9 +55,7 @@
 ;;; as expected but they're no proof of that - one would need to look
 ;;; at the actual macroexpanded code and verify manually each use of
 ;;; the macros. But if the canaries don't work, then the code is most
-;;; probably *NOT* behaving as intended! Looking at you
-;;; "try-muffle-code-deletion-note-condition"... (canary still active
-;;; and well on it -- is it because it was optimised away?)
+;;; probably *NOT* behaving as intended!
 (defmacro with-muffled-code-deletion-note-condition-if-possible (&body alambda)
   `(locally
        (declare #+sbcl
