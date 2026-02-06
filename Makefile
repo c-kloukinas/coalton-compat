@@ -137,7 +137,7 @@ testall:
 	  test -d ~/.cache/common-lisp/$${caseNow}* \
 	  && echo Which already exists \
 	  || echo Which does not exist already ; \
-	  $(call runOnFileWithOutput,$(COMP),compat/x-build.lisp,$(TEMP)/z-out-$${caseNow}.txt) \
+	  $(call runOnFileWithOutput,$(COMP),build-test-configuration.lisp,$(TEMP)/z-out-$${caseNow}.txt) \
 	; done \
 	; done \
 	; done \
