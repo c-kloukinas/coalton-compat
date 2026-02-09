@@ -1,4 +1,4 @@
-(coalton-library/utils::defstdlib-package #:coalton-library/bits
+(coalton/utils::defstdlib-package #:coalton/bits
   (:shadow
      #:and
      #:or
@@ -9,10 +9,10 @@
   (:local-nicknames
    (#:compat #:coalton-compatibility))
   (:import-from
-   #:coalton-library/classes
+   #:coalton/classes
    #:Num)
   (:import-from
-   #:coalton-library/internal/rbit
+   #:coalton/internal/rbit
    #:rbit)
   (:export
    #:Bits
@@ -27,7 +27,7 @@
    #:reverse-bits
    #:reverse-n-bits))
 
-(in-package #:coalton-library/bits)
+(in-package #:coalton/bits)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -98,5 +98,4 @@
 (define-reverse-bits UFix +n-ufix-bits+)
 (define-reverse-bits U64 64)
 
-(compat:try-lock-package "COALTON-LIBRARY/BITS")
-
+(compat:try-lock-package "COALTON/BITS")

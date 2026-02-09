@@ -1,17 +1,17 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/string
+(coalton/utils:defstdlib-package #:coalton/string
   (:use
    #:coalton
-   #:coalton-library/builtin
-   #:coalton-library/classes)
+   #:coalton/builtin
+   #:coalton/classes)
   (:import-from
-   #:coalton-library/hash
+   #:coalton/hash
    #:define-sxhash-hasher)
   (:import-from
-   #:coalton-library/vector
+   #:coalton/vector
    #:Vector)
   (:local-nicknames
-   (#:cell #:coalton-library/cell)
-   (#:iter #:coalton-library/iterator)
+   (#:cell #:coalton/cell)
+   (#:iter #:coalton/iterator)
    (#:compat #:coalton-compatibility))
   (:export
    #:concat
@@ -32,7 +32,7 @@
    #:downcase))
 
 
-(in-package #:coalton-library/string)
+(in-package #:coalton/string)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -275,4 +275,4 @@ does not have that suffix."
   (define-sxhash-hasher String))
 
 
-(compat:try-lock-package "COALTON-LIBRARY/STRING")
+(compat:try-lock-package "COALTON/STRING")

@@ -1,8 +1,8 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/functions
+(coalton/utils:defstdlib-package #:coalton/functions
   (:use
    #:coalton
-   #:coalton-library/builtin
-   #:coalton-library/classes)
+   #:coalton/builtin
+   #:coalton/classes)
   (:local-nicknames
    (#:compat #:coalton-compatibility))
   (:export
@@ -29,7 +29,7 @@
    #:/=
    #:bracket))
 
-(in-package #:coalton-library/functions)
+(in-package #:coalton/functions)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -236,4 +236,4 @@ Modeled after Haskell: https://wiki.haskell.org/Bracket_pattern"
      (lisp (:m :c) (obj exit body)
        (%unwind-protect obj exit body)))))
 
-(compat:try-lock-package "COALTON-LIBRARY/FUNCTIONS")
+(compat:try-lock-package "COALTON/FUNCTIONS")

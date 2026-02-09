@@ -2,16 +2,16 @@
 ;;;;
 ;;;; Integral domains and operations on integers
 
-(coalton-library/utils::defstdlib-package #:coalton-library/math/integral
+(coalton/utils::defstdlib-package #:coalton/math/integral
   (:use
    #:coalton
-   #:coalton-library/classes
-   #:coalton-library/builtin
-   #:coalton-library/math/arith)
+   #:coalton/classes
+   #:coalton/builtin
+   #:coalton/math/arith)
   (:import-from
-   #:coalton-library/bits #:Bits)
+   #:coalton/bits #:Bits)
   (:local-nicknames
-   (#:bits #:coalton-library/bits)
+   (#:bits #:coalton/bits)
    (#:compat #:coalton-compatibility))
   (:export
    #:Remainder
@@ -36,7 +36,7 @@
    #:ilog))
 
 
-(in-package #:coalton-library/math/integral)
+(in-package #:coalton/math/integral)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -192,8 +192,8 @@ are floored and truncated division, respectively."
          (lisp ,type (a n) (cl:rem a n)))
        (inline)
        (define (quotRem a n)
-         (match (lisp (Tuple Integer ,type) (a n)
-                  (cl:multiple-value-call 'Tuple (cl:truncate a n)))
+         (match (lisp multiple-values (Tuple Integer ,type) (a n)
+                  (cl:truncate a n))
            ((Tuple q r)
             (Tuple (fromInt q) r))))
        (inline)
@@ -204,8 +204,8 @@ are floored and truncated division, respectively."
          (lisp ,type (a n) (cl:mod a n)))
        (inline)
        (define (divMod a n)
-         (match (lisp (Tuple Integer ,type) (a n)
-                  (cl:multiple-value-call 'Tuple (cl:floor a n)))
+         (match (lisp multiple-values (Tuple Integer ,type) (a n)
+                  (cl:floor a n))
            ((Tuple d m)
             (Tuple (fromInt d) m)))))))
 
@@ -322,4 +322,4 @@ are floored and truncated division, respectively."
 (%define-native-expt F32)
 (%define-native-expt F64)
 
-(compat:try-lock-package "COALTON-LIBRARY/MATH/INTEGRAL")
+(compat:try-lock-package "COALTON/MATH/INTEGRAL")

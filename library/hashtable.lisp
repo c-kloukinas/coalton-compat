@@ -1,12 +1,12 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/hashtable
+(coalton/utils:defstdlib-package #:coalton/hashtable
   (:use
    #:coalton
-   #:coalton-library/builtin
-   #:coalton-library/classes
-   #:coalton-library/hash)
+   #:coalton/builtin
+   #:coalton/classes
+   #:coalton/hash)
   (:local-nicknames
-   (#:cell #:coalton-library/cell)
-   (#:iter #:coalton-library/iterator)
+   (#:cell #:coalton/cell)
+   (#:iter #:coalton/iterator)
    (#:shim #:coalton/hashtable-shim)
    (#:compat #:coalton-compatibility))
   (:export
@@ -24,7 +24,7 @@
    #:extend!
    #:make))
 
-(in-package #:coalton-library/hashtable)
+(in-package #:coalton/hashtable)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -259,19 +259,19 @@ Examples:
                              keys values)
                 ,ht)))))
 
-(compat:try-lock-package "COALTON-LIBRARY/HASHTABLE")
+(compat:try-lock-package "COALTON/HASHTABLE")
 
-(in-package #:coalton-library/iterator)
+(in-package #:coalton/iterator)
 
 (coalton-toplevel
   (declare remove-duplicates! (Hash :elt => Iterator :elt -> Iterator :elt))
   (define (remove-duplicates! iter)
     "Yield unique elements from ITER in order of first appearance."
-    (let ((already-seen (coalton-library/hashtable:new))
+    (let ((already-seen (coalton/hashtable:new))
           (unique? (fn (elt)
-                     (match (coalton-library/hashtable:get already-seen elt)
+                     (match (coalton/hashtable:get already-seen elt)
                        ((Some _) False)
                        ((None)
-                        (coalton-library/hashtable:set! already-seen elt Unit)
+                        (coalton/hashtable:set! already-seen elt Unit)
                         True)))))
       (filter! unique? iter))))

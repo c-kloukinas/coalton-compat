@@ -3,16 +3,16 @@
 ;;; Dyadic rationals meant for implementing big floats
 ;;; It is not exported into the math package as it is a niche numeric type
 
-(coalton-library/utils::defstdlib-package #:coalton-library/math/dyadic
+(coalton/utils::defstdlib-package #:coalton/math/dyadic
     (:use
      #:coalton
-     #:coalton-library/builtin
-     #:coalton-library/classes
-     #:coalton-library/math/arith
-     #:coalton-library/math/integral
-     #:coalton-library/math/real)
+     #:coalton/builtin
+     #:coalton/classes
+     #:coalton/math/arith
+     #:coalton/math/integral
+     #:coalton/math/real)
   (:local-nicknames
-   (#:bits #:coalton-library/bits)
+   (#:bits #:coalton/bits)
    (#:compat #:coalton-compatibility))
   (:export
    #:Dyadic
@@ -22,7 +22,7 @@
    #:scale
    #:shift))
 
-(in-package #:coalton-library/math/dyadic)
+(in-package #:coalton/math/dyadic)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -168,4 +168,4 @@ numbers."
         a
         (Dyadic (rsh m delta) (+ delta e)))))
 
-(compat:try-lock-package "COALTON-LIBRARY/MATH/DYADIC")
+(compat:try-lock-package "COALTON/MATH/DYADIC")

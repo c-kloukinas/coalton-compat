@@ -3,16 +3,16 @@
 ;;;; An implementation of Dual numbers for the computing derivatives
 ;;;; of compositions of built-in Coalton functions.
 
-(coalton-library/utils:defstdlib-package #:coalton-library/math/dual
+(coalton/utils:defstdlib-package #:coalton/math/dual
   (:use
    #:coalton
-   #:coalton-library/builtin
-   #:coalton-library/classes
-   #:coalton-library/functions
-   #:coalton-library/math/arith
-   #:coalton-library/math/elementary
-   #:coalton-library/math/integral
-   #:coalton-library/hash)
+   #:coalton/builtin
+   #:coalton/classes
+   #:coalton/functions
+   #:coalton/math/arith
+   #:coalton/math/elementary
+   #:coalton/math/integral
+   #:coalton/hash)
   (:local-nicknames
    (#:compat #:coalton-compatibility))
   (:export
@@ -71,7 +71,7 @@ References:
 - [2] https://blog.demofox.org/2014/12/30/dual-numbers-automatic-differentiation/
 - [3] https://hackage.haskell.org/package/ad"))
 
-(in-package #:coalton-library/math/dual)
+(in-package #:coalton/math/dual)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -205,4 +205,4 @@ component."
       (hash p1))))
 
 
-(compat:try-lock-package "COALTON-LIBRARY/MATH/DUAL")
+(compat:try-lock-package "COALTON/MATH/DUAL")

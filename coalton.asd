@@ -306,6 +306,7 @@
                 :serial t
                 :components ((:file "cursor-tests")))
                (:file "entry-tests")
+               (:file "codegen-pattern-tests")
                (:file "toplevel-tests")
                (:file "type-inference-tests")
                (:file "fundep-tests")
@@ -333,6 +334,7 @@
                (:file "ordtree-tests")
                (:file "ordmap-tests")
                (:file "recursive-let-tests")
+               (:file "multiple-values-tests")
                (:file "class-tests")
                (:file "struct-tests")
                (:file "type-alias-tests")

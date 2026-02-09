@@ -2,17 +2,17 @@
 ;;;;
 ;;;; Conversions between primitive numerical types
 
-(coalton-library/utils:defstdlib-package #:coalton-library/math/conversions
+(coalton/utils:defstdlib-package #:coalton/math/conversions
   (:use
    #:coalton
-   #:coalton-library/builtin
-   #:coalton-library/classes
-   #:coalton-library/functions
-   #:coalton-library/math/bounded)
+   #:coalton/builtin
+   #:coalton/classes
+   #:coalton/functions
+   #:coalton/math/bounded)
   (:local-nicknames
    (#:compat #:coalton-compatibility)))
 
-(in-package #:coalton-library/math/conversions)
+(in-package #:coalton/math/conversions)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -237,4 +237,4 @@ cannot be represented in :TO. These fall into a few categories:
   (integer-tryinto-float UFix cl:double-float F64 53))
 
 
-(compat:try-lock-package "COALTON-LIBRARY/MATH/CONVERSIONS")
+(compat:try-lock-package "COALTON/MATH/CONVERSIONS")

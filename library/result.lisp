@@ -1,12 +1,12 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/result
+(coalton/utils:defstdlib-package #:coalton/result
   (:use
    #:coalton
-   #:coalton-library/builtin
-   #:coalton-library/classes
-   #:coalton-library/optional)
+   #:coalton/builtin
+   #:coalton/classes
+   #:coalton/optional)
   (:local-nicknames
-   (#:cell #:coalton-library/cell)
-   (#:iter #:coalton-library/iterator)
+   (#:cell #:coalton/cell)
+   (#:iter #:coalton/iterator)
    (#:compat #:coalton-compatibility))
   (:export
    #:ok?
@@ -19,7 +19,7 @@
    #:err-if
    #:ok-or-error))
 
-(in-package #:coalton-library/result)
+(in-package #:coalton/result)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -200,4 +200,4 @@
         ((None) (Ok out))
         ((Some e) (Err e))))))
 
-(compat:try-lock-package "COALTON-LIBRARY/RESULT")
+(compat:try-lock-package "COALTON/RESULT")

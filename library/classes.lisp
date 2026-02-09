@@ -1,8 +1,8 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/classes
+(coalton/utils:defstdlib-package #:coalton/classes
   (:use
    #:coalton)
   (:local-nicknames
-   (#:types #:coalton-library/types)
+   (#:types #:coalton/types)
    (#:compat #:coalton-compatibility))
   (:export
    #:Signalable
@@ -37,7 +37,7 @@
    #:Unwrappable #:unwrap-or-else #:with-default #:unwrap #:unwrap-into #:expect #:as-optional
    #:default #:defaulting-unwrap #:default?))
 
-(in-package #:coalton-library/classes)
+(in-package #:coalton/classes)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -406,4 +406,4 @@ Typical `fail` continuations are:
       (== x (default))))
 
 
-(compat:try-lock-package "COALTON-LIBRARY/CLASSES")
+(compat:try-lock-package "COALTON/CLASSES")

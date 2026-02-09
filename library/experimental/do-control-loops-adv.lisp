@@ -1,18 +1,18 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/experimental/do-control-loops-adv
+(coalton/utils:defstdlib-package #:coalton/experimental/do-control-loops-adv
   (:use
    #:coalton
-   #:coalton-library/classes
-   #:coalton-library/functions)
+   #:coalton/classes
+   #:coalton/functions)
   (:local-nicknames
-   (:l #:coalton-library/list)
-   (:ct #:coalton-library/experimental/do-control-core)
+   (:l #:coalton/list)
+   (:ct #:coalton/experimental/do-control-core)
    (#:compat #:coalton-compatibility))
-  (:import-from #:coalton-library/monad/environment
+  (:import-from #:coalton/monad/environment
    #:MonadEnvironment
    #:ask
    #:local
    #:asks)
-  (:import-from #:coalton-library/monad/statet
+  (:import-from #:coalton/monad/statet
    #:MonadState
    #:get
    #:put
@@ -57,7 +57,7 @@
    #:once
    #:do-once))
 
-(in-package  #:coalton-library/experimental/do-control-loops-adv)
+(in-package  #:coalton/experimental/do-control-loops-adv)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -340,4 +340,4 @@ immediately end execution in the operation. Returns Unit."
     (do
      ,@body)))
 
-(compat:try-lock-package "COALTON-LIBRARY/EXPERIMENTAL/DO-CONTROL-LOOPS-ADV")
+(compat:try-lock-package "COALTON/EXPERIMENTAL/DO-CONTROL-LOOPS-ADV")

@@ -33,6 +33,7 @@
    #:*update-hook*                          ; VARIABLE
    #:value-environment                      ; STRUCT
    #:explicit-repr                          ; TYPE
+   #:variance-list                          ; TYPE
    #:type-entry                             ; STRUCT
    #:make-type-entry                        ; CONSTRUCTOR
    #:type-entry-name                        ; ACCESSOR
@@ -40,6 +41,7 @@
    #:type-entry-runtime-type                ; ACCESSOR
    #:type-entry-type                        ; ACCESSOR
    #:type-entry-tyvars                      ; ACCESSOR
+   #:type-entry-variances                   ; ACCESSOR
    #:type-entry-constructors                ; ACCESSOR
    #:type-entry-explicit-repr               ; ACCESSOR
    #:type-entry-enum-repr                   ; ACCESSOR
@@ -272,12 +274,26 @@
     (member :enum :lisp :transparent)
     (cons (eql :native) (cons t null))))
 
+(defun variance-list-p (x)
+  (and (alexandria:proper-list-p x)
+       (every (lambda (variance)
+                (member variance '(:covariant :contravariant :invariant) :test #'eq))
+              x)))
+
+(deftype variance-list ()
+  '(satisfies variance-list-p))
+
 (defstruct type-entry
   (name          (util:required 'name)          :type symbol                    :read-only t)
   (source-name   nil                            :type (or null string)          :read-only t)
   (runtime-type  (util:required 'runtime-type)  :type t                         :read-only t)
   (type          (util:required 'type)          :type ty                        :read-only t)
   (tyvars        (util:required 'tyvars)        :type tyvar-list                :read-only t)
+  ;; Variance of each type parameter in declaration order.
+  ;; Entries are one of :COVARIANT, :CONTRAVARIANT, or :INVARIANT.
+  ;; Used by relaxed value restriction when deciding whether weak variables
+  ;; from expansive bindings can be generalized.
+  (variances     (util:required 'variances)     :type variance-list             :read-only t)
   (constructors  (util:required 'constructors)  :type util:symbol-list          :read-only t)
   ;; An explicit repr defined in the source, or nil if none was
   ;; supplied. Computed repr will be reflected in ENUM-REPR, NEWTYPE,
@@ -334,6 +350,7 @@
             :runtime-type 'cl:boolean
             :type *boolean-type*
             :tyvars nil
+            :variances nil
             :constructors '(coalton:True coalton:False)
             :explicit-repr '(:native cl:boolean)
             :enum-repr t
@@ -347,6 +364,7 @@
             :runtime-type 'coalton-impl/constants:lisp-type-of-unit
             :type *unit-type*
             :tyvars nil
+            :variances nil
             :constructors '(coalton:Unit)
             :explicit-repr :enum
             :enum-repr t
@@ -360,6 +378,7 @@
             :runtime-type 'cl:character
             :type *char-type*
             :tyvars nil
+            :variances nil
             :constructors nil
             :explicit-repr '(:native cl:character)
             :enum-repr nil
@@ -373,6 +392,7 @@
             :runtime-type 'cl:integer
             :type *integer-type*
             :tyvars nil
+            :variances nil
             :constructors nil
             :explicit-repr '(:native cl:integer)
             :enum-repr nil
@@ -386,6 +406,7 @@
             :runtime-type 'cl:single-float
             :type *single-float-type*
             :tyvars nil
+            :variances nil
             :constructors nil
             :explicit-repr '(:native cl:single-float)
             :enum-repr nil
@@ -399,6 +420,7 @@
             :runtime-type 'cl:double-float
             :type *double-float-type*
             :tyvars nil
+            :variances nil
             :constructors nil
             :explicit-repr '(:native cl:double-float)
             :enum-repr nil
@@ -412,6 +434,7 @@
             :runtime-type 'cl:string
             :type *string-type*
             :tyvars nil
+            :variances nil
             :constructors nil
             :explicit-repr '(:native cl:string)
             :enum-repr nil
@@ -425,6 +448,7 @@
             :runtime-type 'cl:rational
             :type *fraction-type*
             :tyvars nil
+            :variances nil
             :constructors nil
             :explicit-repr '(:native cl:rational)
             :enum-repr nil
@@ -438,6 +462,7 @@
             :runtime-type nil
             :type *arrow-type*
             :tyvars nil
+            :variances '(:contravariant :covariant)
             :constructors nil
             :explicit-repr nil
             :enum-repr nil
@@ -451,6 +476,7 @@
             :runtime-type 'cl:list
             :type *list-type*
             :tyvars (list (make-variable))
+            :variances '(:covariant)
             :constructors '(coalton:Cons coalton:Nil)
             :explicit-repr '(:native cl:list)
             :enum-repr nil
@@ -464,6 +490,7 @@
             :runtime-type 'cl:t
             :type *optional-type*
             :tyvars (list (make-variable))
+            :variances '(:covariant)
             :constructors '(coalton:Some coalton:None)
             :explicit-repr '(:native cl:t)
             :enum-repr nil

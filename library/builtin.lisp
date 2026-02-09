@@ -1,7 +1,7 @@
-(coalton-library/utils::defstdlib-package #:coalton-library/builtin
+(coalton/utils::defstdlib-package #:coalton/builtin
   (:use
    #:coalton
-   #:coalton-library/classes)
+   #:coalton/classes)
   (:local-nicknames
    (#:compat #:coalton-compatibility))
   (:export
@@ -15,7 +15,7 @@
    #:boolean-and
    #:boolean-xor))
 
-(in-package #:coalton-library/builtin)
+(in-package #:coalton/builtin)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -74,4 +74,4 @@
       ((False) y))))
 
 
-(compat:try-lock-package "COALTON-LIBRARY/BUILTIN")
+(compat:try-lock-package "COALTON/BUILTIN")

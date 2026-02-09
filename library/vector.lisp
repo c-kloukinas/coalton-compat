@@ -1,16 +1,16 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/vector
+(coalton/utils:defstdlib-package #:coalton/vector
   (:use
    #:coalton
-   #:coalton-library/builtin
-   #:coalton-library/functions
-   #:coalton-library/classes
-   #:coalton-library/experimental/loops)
+   #:coalton/builtin
+   #:coalton/functions
+   #:coalton/classes
+   #:coalton/experimental/loops)
   (:local-nicknames
-   (#:types #:coalton-library/types)
-   (#:list #:coalton-library/list)
-   (#:cell #:coalton-library/cell)
-   (#:iter #:coalton-library/iterator)
-   (#:ram #:coalton-library/randomaccess)
+   (#:types #:coalton/types)
+   (#:list #:coalton/list)
+   (#:cell #:coalton/cell)
+   (#:iter #:coalton/iterator)
+   (#:ram #:coalton/randomaccess)
    (#:compat #:coalton-compatibility))
   (:export
    #:Vector
@@ -48,7 +48,7 @@
    #:sort-by!
    #:make))
 
-(in-package #:coalton-library/vector)
+(in-package #:coalton/vector)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -447,4 +447,4 @@
             :collect `(push! ,elt ,vec))
        ,vec)))
 
-(compat:try-lock-package "COALTON-LIBRARY/VECTOR")
+(compat:try-lock-package "COALTON/VECTOR")

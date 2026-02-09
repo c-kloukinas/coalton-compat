@@ -325,7 +325,7 @@
     (let ((s (cell:new 42))
           (a 2862933555777941757)
           (b 3037000493)
-          (m (coalton-library/bits:shift 64 1)))
+          (m (coalton/bits:shift 64 1)))
       ;; Simple 64bit congruential generator.
       ;; https://nuclear.llnl.gov/CNP/rng/rngman/node4.html
       ;; CL's random is cumbersome to use with portable fixed seed value.
@@ -497,6 +497,15 @@
   (is (== (list->hashmap (make-list (Tuple 0 1)
                                     (Tuple 1 1)))
           result)))
+
+(define-test hashmap-multiple-values-entrypoints-defined ()
+  (is
+   (lisp Boolean ()
+     (cl:not
+      (cl:null
+       (cl:and (cl:fboundp 'coalton-library/hashmap::chain-update%values)
+               (cl:fboundp 'coalton-library/hashmap::update%values)
+               (cl:fboundp 'coalton-library/hashmap::modify-get%values)))))))
 
 (define-test hashmap-show ()
   (let hm = (the (hashmap:HashMap Integer Integer)

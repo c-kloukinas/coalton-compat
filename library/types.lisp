@@ -1,4 +1,4 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/types
+(coalton/utils:defstdlib-package #:coalton/types
   (:use
    #:coalton)
   (:local-nicknames
@@ -12,7 +12,7 @@
    #:RuntimeRepr #:runtime-repr
    #:runtime-repr-of))
 
-(in-package #:coalton-library/types)
+(in-package #:coalton/types)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -127,4 +127,4 @@ The compiler will auto-generate instances of `RuntimeRepr` for all defined types
     (define (runtime-repr _)
       (lisp LispType () '(cl:member 'proxy/proxy)))))
 
-(compat:try-lock-package "COALTON-LIBRARY/TYPES")
+(compat:try-lock-package "COALTON/TYPES")

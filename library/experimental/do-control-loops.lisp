@@ -1,12 +1,12 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/experimental/do-control-loops
+(coalton/utils:defstdlib-package #:coalton/experimental/do-control-loops
   (:use
    #:coalton
-   #:coalton-library/classes)
+   #:coalton/classes)
   (:local-nicknames
-   (:l #:coalton-library/list)
-   (:it #:coalton-library/iterator)
+   (:l #:coalton/list)
+   (:it #:coalton/iterator)
    (#:compat #:coalton-compatibility))
-  (:import-from #:coalton-library/experimental/do-control-core
+  (:import-from #:coalton/experimental/do-control-core
    #:Terminator
    #:ended?
    #:Yielder
@@ -28,7 +28,7 @@
    #:do-collect
    #:do-foreach))
 
-(in-package #:coalton-library/experimental/do-control-loops)
+(in-package #:coalton/experimental/do-control-loops)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -176,4 +176,4 @@ Returns Unit."
       (do
        ,@body))))
 
-(compat:try-lock-package "COALTON-LIBRARY/EXPERIMENTAL/DO-CONTROL-LOOPS")
+(compat:try-lock-package "COALTON/EXPERIMENTAL/DO-CONTROL-LOOPS")

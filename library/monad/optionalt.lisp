@@ -1,9 +1,9 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/monad/optionalt
+(coalton/utils:defstdlib-package #:coalton/monad/optionalt
   (:use
    #:coalton
-   #:coalton-library/functions
-   #:coalton-library/classes
-   #:coalton-library/monad/classes)
+   #:coalton/functions
+   #:coalton/classes
+   #:coalton/monad/classes)
   (:local-nicknames
    (#:compat #:coalton-compatibility))
   (:export
@@ -11,7 +11,7 @@
    #:run-optionalT
    #:map-optionalT))
 
-(in-package #:coalton-library/monad/optionalt)
+(in-package #:coalton/monad/optionalt)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -111,4 +111,4 @@
     (define put (compose lift put))
     (define modify (compose lift modify))))
 
-(compat:try-lock-package "COALTON-LIBRARY/MONAD/OPTIONALT")
+(compat:try-lock-package "COALTON/MONAD/OPTIONALT")

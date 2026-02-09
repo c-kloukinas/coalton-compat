@@ -2,13 +2,13 @@
 ;;;;
 ;;;; Number types and basic arithmetic.
 
-(coalton-library/utils:defstdlib-package #:coalton-library/math/arith
+(coalton/utils:defstdlib-package #:coalton/math/arith
   (:use
    #:coalton
-   #:coalton-library/builtin
-   #:coalton-library/classes
-   #:coalton-library/functions
-   #:coalton-library/utils)
+   #:coalton/builtin
+   #:coalton/classes
+   #:coalton/functions
+   #:coalton/utils)
   (:local-nicknames
    (#:compat #:coalton-compatibility))
   (:export
@@ -38,7 +38,7 @@
    #:zero?
    #:nonzero?))
 
-(in-package #:coalton-library/math/arith)
+(in-package #:coalton/math/arith)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -247,4 +247,4 @@ The function `general/` is partial, and will error produce a run-time error if t
 (%define-abs-native F32)
 (%define-abs-native F64)
 
-(compat:try-lock-package "COALTON-LIBRARY/MATH/ARITH")
+(compat:try-lock-package "COALTON/MATH/ARITH")

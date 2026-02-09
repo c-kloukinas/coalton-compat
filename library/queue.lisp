@@ -1,12 +1,12 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/queue
+(coalton/utils:defstdlib-package #:coalton/queue
   (:use
    #:coalton
-   #:coalton-library/builtin
-   #:coalton-library/functions
-   #:coalton-library/classes)
+   #:coalton/builtin
+   #:coalton/functions
+   #:coalton/classes)
   (:local-nicknames
-   (#:cell #:coalton-library/cell)
-   (#:iter #:coalton-library/iterator)
+   (#:cell #:coalton/cell)
+   (#:iter #:coalton/iterator)
    (#:compat #:coalton-compatibility))
   (:export
    #:Queue
@@ -26,7 +26,7 @@
    #:extend!
    #:items!))
 
-(in-package #:coalton-library/queue)
+(in-package #:coalton/queue)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -255,4 +255,4 @@
   (define-instance (Default (Queue :a))
     (define default new)))
 
-(compat:try-lock-package "COALTON-LIBRARY/QUEUE")
+(compat:try-lock-package "COALTON/QUEUE")

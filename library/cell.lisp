@@ -1,8 +1,8 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/cell
+(coalton/utils:defstdlib-package #:coalton/cell
   (:use
    #:coalton
-   #:coalton-library/builtin
-   #:coalton-library/classes)
+   #:coalton/builtin
+   #:coalton/classes)
   (:local-nicknames
    (#:compat #:coalton-compatibility))
   (:export
@@ -18,7 +18,7 @@
    #:increment!
    #:decrement!))
 
-(in-package #:coalton-library/cell)
+(in-package #:coalton/cell)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -167,4 +167,4 @@ value."
     (inline)
     (define (default) (new (default)))))
 
-(compat:try-lock-package "COALTON-LIBRARY/CELL")
+(compat:try-lock-package "COALTON/CELL")

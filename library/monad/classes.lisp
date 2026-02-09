@@ -1,7 +1,7 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/monad/classes
+(coalton/utils:defstdlib-package #:coalton/monad/classes
   (:use
    #:coalton
-   #:coalton-library/classes)
+   #:coalton/classes)
   (:local-nicknames
    (#:compat #:coalton-compatibility))
   (:export
@@ -19,7 +19,7 @@
    #:modify
    ))
 
-(in-package #:coalton-library/monad/classes)
+(in-package #:coalton/monad/classes)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -64,4 +64,4 @@
      "Modify the computation state, discarding the old state."
      ((:s -> :s) -> :m Unit))))
 
-(compat:try-lock-package "COALTON-LIBRARY/MONAD/CLASSES")
+(compat:try-lock-package "COALTON/MONAD/CLASSES")

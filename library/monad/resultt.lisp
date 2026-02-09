@@ -1,10 +1,10 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/monad/resultt
+(coalton/utils:defstdlib-package #:coalton/monad/resultt
   (:use
    #:coalton
-   #:coalton-library/functions
-   #:coalton-library/classes
-   #:coalton-library/result
-   #:coalton-library/monad/classes)
+   #:coalton/functions
+   #:coalton/classes
+   #:coalton/result
+   #:coalton/monad/classes)
   (:local-nicknames
    (#:compat #:coalton-compatibility))
   (:export
@@ -17,7 +17,7 @@
    #:err-ifT
    #:do-resultT))
 
-(in-package #:coalton-library/monad/resultt)
+(in-package #:coalton/monad/resultt)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -209,4 +209,4 @@ with these function definitions:
     (define put (compose lift put))
     (define modify (compose lift modify))))
 
-(compat:try-lock-package "COALTON-LIBRARY/MONAD/RESULTT")
+(compat:try-lock-package "COALTON/MONAD/RESULTT")

@@ -27,7 +27,7 @@
                   (simple-warning (e) (declare (ignore e))))))))
 
 
-(in-package #:coalton-library/big-float)
+(in-package #:coalton/big-float)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -229,9 +229,9 @@
         (cl:let ((x (sb-mpfr:ceiling f)))
           (sb-mpfr:coerce x 'cl:integer))))
     (define (proper f)
-      (lisp (Tuple Integer Big-Float) (f)
+      (lisp multiple-values (Tuple Integer Big-Float) (f)
         (cl:let ((x (sb-mpfr:truncate f)))
-          (Tuple
+          (cl:values
            (sb-mpfr:coerce x 'cl:integer)
            (sb-mpfr:sub f x))))))
 
@@ -342,7 +342,7 @@
       (lisp Big-Float (x)
         (cl:values (sb-mpfr:sqrt x))))
     (define (nth-root n x)
-      (coalton-library/math/elementary::canonical-nth-root n x)))
+      (coalton/math/elementary::canonical-nth-root n x)))
 
   (define-instance (Polar Big-Float)
     (define (phase z)
@@ -356,4 +356,4 @@
 ;COALTON-TOPLEVEL
 
 #+sb-package-locks
-(sb-ext:lock-package "COALTON-LIBRARY/BIG-FLOAT")
+(sb-ext:lock-package "COALTON/BIG-FLOAT")

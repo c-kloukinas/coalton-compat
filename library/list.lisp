@@ -1,16 +1,16 @@
-(coalton-library/utils::defstdlib-package #:coalton-library/list
+(coalton/utils::defstdlib-package #:coalton/list
   (:use
    #:coalton
-   #:coalton-library/builtin
-   #:coalton-library/classes
-   #:coalton-library/hash
-   #:coalton-library/functions
-   #:coalton-library/tuple
-   #:coalton-library/optional)
+   #:coalton/builtin
+   #:coalton/classes
+   #:coalton/hash
+   #:coalton/functions
+   #:coalton/tuple
+   #:coalton/optional)
   (:local-nicknames
-   (#:cell #:coalton-library/cell)
-   (#:iter #:coalton-library/iterator)
-   (#:math #:coalton-library/math)
+   (#:cell #:coalton/cell)
+   (#:iter #:coalton/iterator)
+   (#:math #:coalton/math)
    (#:compat #:coalton-compatibility))
   (:export
    #:head
@@ -78,7 +78,7 @@
    #:combsOf
    #:make))
 
-(in-package #:coalton-library/list)
+(in-package #:coalton/list)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -527,7 +527,7 @@
     (lisp (List :a) (cmp xs)
       (cl:sort (cl:copy-list xs)
                (cl:lambda (a b)
-                 (cl:eq 'coalton-library/classes::ord/lt (call-coalton-function cmp a b))))))
+                 (cl:eq 'coalton/classes::ord/lt (call-coalton-function cmp a b))))))
 
   (declare intersperse (:a -> (List :a) -> (List :a)))
   (define (intersperse e xs)
@@ -813,4 +813,4 @@ This function is equivalent to all size-`n` elements of `(combs l)`."
   "Make a homogeneous list of `elements`. Synonym for `coalton:make-list`."
   `(coalton:make-list ,@elements))
 
-(compat:try-lock-package "COALTON-LIBRARY/LIST")
+(compat:try-lock-package "COALTON/LIST")

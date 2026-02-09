@@ -1,8 +1,8 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/monad/state
+(coalton/utils:defstdlib-package #:coalton/monad/state
   (:use
    #:coalton
-   #:coalton-library/builtin
-   #:coalton-library/classes)
+   #:coalton/builtin
+   #:coalton/classes)
   (:local-nicknames
    (#:compat #:coalton-compatibility))
   (:export
@@ -15,7 +15,7 @@
    #:modify-swap
    #:run))
 
-(in-package #:coalton-library/monad/state)
+(in-package #:coalton/monad/state)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -121,4 +121,4 @@ Represented as a closure from initial state to updated state and value."
             ;; and apply the state from ma to the mb
             (run (fa->scb a) state2))))))))
 
-(compat:try-lock-package "COALTON-LIBRARY/MONAD/STATE")
+(compat:try-lock-package "COALTON/MONAD/STATE")

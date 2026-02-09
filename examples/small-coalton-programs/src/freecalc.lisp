@@ -10,9 +10,9 @@
    #:disassemble)
   (:use #:coalton #:coalton-prelude)
   (:local-nicknames
-   (#:vector #:coalton-library/vector)
-   (#:st #:coalton-library/monad/state)
-   (#:free #:coalton-library/monad/free))
+   (#:vector #:coalton/vector)
+   (#:st #:coalton/monad/state)
+   (#:free #:coalton/monad/free))
   (:export #:run-a-program))
 
 (named-readtables:in-readtable coalton:coalton)
@@ -72,14 +72,17 @@ we map over."
   ;; into a State monad. We use a vector of numbers for our inputs.
   ;;
   
-  (define compute-from-vector-inputs
+  ;; Eta-expand this interpreter so the binding is non-expansive and remains
+  ;; generalizable under the value restriction.
+  (define (compute-from-vector-inputs program)
     (free:foldfree
      (fn (arg) (match arg
                  ((AddE x y next) (pure (next (+ x y))))
                  ((SubE x y next) (pure (next (- x y))))
                  ((InputE next)
                   (map (compose next (fn (vec) (defaulting-unwrap (vector:pop! vec))))
-                       st:get))))))
+                       st:get))))
+     program))
 
 
   ;;

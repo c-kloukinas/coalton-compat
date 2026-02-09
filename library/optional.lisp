@@ -1,18 +1,18 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/optional
+(coalton/utils:defstdlib-package #:coalton/optional
   (:use
    #:coalton
-   #:coalton-library/builtin
-   #:coalton-library/classes)
+   #:coalton/builtin
+   #:coalton/classes)
   (:local-nicknames
-   (#:cell #:coalton-library/cell)
-   (#:iter #:coalton-library/iterator)
+   (#:cell #:coalton/cell)
+   (#:iter #:coalton/iterator)
    (#:compat #:coalton-compatibility))
   (:export
    #:from-some
    #:some?
    #:none?))
 
-(in-package #:coalton-library/optional)
+(in-package #:coalton/optional)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -156,4 +156,4 @@
   (define-instance (Default (Optional :a))
     (define (default) None)))
 
-(compat:try-lock-package "COALTON-LIBRARY/OPTIONAL")
+(compat:try-lock-package "COALTON/OPTIONAL")

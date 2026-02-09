@@ -1,14 +1,14 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/boolean
+(coalton/utils:defstdlib-package #:coalton/boolean
   (:use
    #:coalton
-   #:coalton-library/classes)
+   #:coalton/classes)
   (:local-nicknames
    (#:compat #:coalton-compatibility))
   (:import-from
-   #:coalton-library/hash
+   #:coalton/hash
    #:define-sxhash-hasher))
 
-(in-package #:coalton-library/boolean)
+(in-package #:coalton/boolean)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -44,4 +44,4 @@
 
   (define-sxhash-hasher Boolean))
 
-(compat:try-lock-package "COALTON-LIBRARY/BOOLEAN")
+(compat:try-lock-package "COALTON/BOOLEAN")

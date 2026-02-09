@@ -1,9 +1,9 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/tuple
+(coalton/utils:defstdlib-package #:coalton/tuple
   (:use
    #:coalton
-   #:coalton-library/builtin
-   #:coalton-library/classes
-   #:coalton-library/hash)
+   #:coalton/builtin
+   #:coalton/classes
+   #:coalton/hash)
   (:local-nicknames
    (#:compat #:coalton-compatibility))
   (:export
@@ -22,7 +22,7 @@
    #:.fifth
    #:sequence-tuple5))
 
-(in-package #:coalton-library/tuple)
+(in-package #:coalton/tuple)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -156,4 +156,4 @@
   (define-instance ((Default :a) (Default :b) => (Default (Tuple :a :b)))
     (define (default) (Tuple (default) (default)))))
 
-(compat:try-lock-package "COALTON-LIBRARY/TUPLE")
+(compat:try-lock-package "COALTON/TUPLE")

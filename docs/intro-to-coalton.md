@@ -21,7 +21,7 @@ For simple projects, you can use the `package-inferred-system` utility to automa
 
 ## Packages
 
-Unlike Common Lisp, Coalton's standard library is organized as a large collection of packages. For example, string-related functions are in the `#:coalton-library/string` package. Refer to the [Coalton Reference](https://coalton-lang.github.io/reference) for a complete list of standard library packages.
+Unlike Common Lisp, Coalton's standard library is organized as a large collection of packages. For example, string-related functions are in the `#:coalton/string` package. Refer to the [Coalton Reference](https://coalton-lang.github.io/reference) for a complete list of standard library packages.
 
 When making a new project, you will want to define a new package and establish your standard library imports. *Do not `:use` the `#:cl` or `#:common-lisp` packages!* Instead, you'll want to, at minimum, `:use` both the `#:coalton` package (for core language features) and `#:coalton-prelude` (for extremely common standard library definitions):
 
@@ -34,14 +34,14 @@ When making a new project, you will want to define a new package and establish y
 
 The `#:coalton-prelude` package does not contain any functionality that isn't also found elsewhere in the standard library, and hence, it is a convenience.
 
-In idiomatic usage, this minimal package definition would be far too limiting to be useful. For instance, if we wanted to use the standard library function `strip-prefix` (which strips a prefix off of a string), we would have to type `coalton-library/string:strip-prefix` in our program. Instead, we can create a local nickname for this package:
+In idiomatic usage, this minimal package definition would be far too limiting to be useful. For instance, if we wanted to use the standard library function `strip-prefix` (which strips a prefix off of a string), we would have to type `coalton/string:strip-prefix` in our program. Instead, we can create a local nickname for this package:
 
 ```lisp
 (defpackage #:my-package
   (:use 
    #:coalton)
   (:local-nicknames 
-   (#:str #:coalton-library/string)))
+   (#:str #:coalton/string)))
 ```
 
 This way, we can now just type `str:strip-prefix`. Any time we make use of a new function, either from the Coalton standard library or from a third-party library, we might add nicknames that function's package to our `:local-nicknames` list. For example:
@@ -51,9 +51,9 @@ This way, we can now just type `str:strip-prefix`. Any time we make use of a new
   (:use 
    #:coalton)
   (:local-nicknames 
-   (#:str  #:coalton-library/string)
-   (#:vec  #:coalton-library/vector)
-   (#:math #:coalton-library/math)))
+   (#:str  #:coalton/string)
+   (#:vec  #:coalton/vector)
+   (#:math #:coalton/math)))
 ```
 
 **We do not recommend `:use`ing any other Coalton built-in packages besides `#:coalton` and `#:coalton-prelude`.** Historically, in Common Lisp, this has caused backwards-compatibility issues when the packages themselves introduce new exported symbols. Moreover, unlike Common Lisp, Coalton follows a pattern of using the same symbol name for similarly defined functions of different packages. For example, both the string package and the vector package have a symbol named `length`, i.e., `str:length` and `vec:length` both exist.
@@ -249,6 +249,97 @@ As suggested, one can replace `y` with `_y`, which tells the Coalton compiler th
 ```
 
 One should treat underscore prefixed variables as ignored whenever possible, and use a name not prefixed with `_` if it may be used. Reading from underscore-prefixed variables is permitted so that generated code (e.g., using macros or read-conditionals) may avoid unused variable warnings for variables which will be used in some compilation contexts but not others.
+
+## Polymorphism, Mutation, and the Value Restriction
+
+Coalton infers polymorphic types for implicitly typed `define` and `let` bindings using a syntactic ML-style value restriction plus a relaxed variance check. This ensures the Coalton type system is sound in the presence of mutable data structures.
+
+Informally:
+
+- A **non-expansive** expression is syntactically value-like (for example: variables, literals, lambdas, and constructor applications over non-expansive arguments).
+- An **expansive** expression is everything else. In particular, ordinary function application is treated as expansive, even when the call is observationally pure.
+- Expansive bindings introduce **weak** type-variable candidates. Weak variables are generalized only when all observed occurrences are **covariant** and they do not occur in retained predicates (constraints).
+
+This still allows many covariant expansive expressions to remain polymorphic.
+
+At top level, unresolved weak variables are rejected with an error.
+
+A non-expansive constructor expression can still generalize:
+
+```lisp
+(coalton-toplevel
+  (define wrapped-none (Some None)))
+;; wrapped-none : Optional (Optional :a)
+```
+
+An expansive expression can still generalize when the weak variable is only covariant:
+
+```lisp
+(coalton-toplevel
+  (define wrapped-id
+    ((fn (x) x) None)))
+;; wrapped-id : (Optional :a)
+```
+
+Even though this example is an ordinary function application (and thus expansive), `:a` appears covariantly, so it can still be generalized.
+
+But expansive bindings involving invariant or contravariant occurrences (or retained constraints on weak variables) do not generalize. For example, mutable containers such as `Vector` remain monomorphic:
+
+```lisp
+(coalton-toplevel
+  (define wrapped-new
+    (Some (coalton/vector:new))))
+;; error
+```
+
+If you hit this, there are two common fixes:
+
+1. Move the allocation into a function body so each call gets fresh state (often via eta-expansion).
+2. Add an explicit top-level type declaration when you intentionally want a monomorphic mutable value.
+
+For example, this is intentionally monomorphic:
+
+```lisp
+(coalton-toplevel
+  (declare int-vec (Vector Integer))
+  (define int-vec (coalton/vector:new)))
+```
+
+Coalton does not track mutability as an intrinsic quality of every type constructor. For opaque parametric type definitions, variance is assumed to be invariant by default.
+
+References:
+
+- OCaml manual: Polymorphism and its limitations.
+- Jacques Garrigue, "Relaxing the Value Restriction".
+- Andrew K. Wright, "Simple Imperative Polymorphism".
+
+### Variance
+
+Coalton uses type-parameter variance to decide which weak type variables from expansive bindings can still be generalized.
+
+- **Covariant**: the type parameter is only produced (for example, `Optional :a`, `List :a`).
+- **Contravariant**: the type parameter is consumed (for example, function argument position in `:a -> :b`).
+- **Invariant**: both directions are possible, or mutability allows writes (common for mutable containers).
+
+Under the relaxed value restriction, weak variables are generalized only when all observed occurrences are covariant; any invariant or contravariant occurrence keeps them monomorphic.
+
+### Opaque Native Types
+
+For `define-type` forms with no constructors and no alias body (typically used with `repr :native`), Coalton cannot inspect the type's internal structure to infer variance from fields. In those cases, type parameters are treated as invariant by default.
+
+This is conservative by design. For mutable wrappers, invariance is usually required for soundness.
+
+Current parametric opaque stdlib types include:
+
+- `Vector :a`
+- `Cell :a`
+- `Queue :a`
+- `Slice :a`
+- `Hashtable :key :value`
+- `LispArray :t`
+- `FileStream :a`
+
+These are all modeled invariantly; each either exposes mutation directly or mixes read/write capabilities in one type.
 
 ## Data Types
 
@@ -619,7 +710,7 @@ accumulator and the counter exceeds 500.  Without the `:outer` label,
 > [!WARNING]
 > These constructs are experimental and may change.
 
-The standard library package [`coalton-library/experimental/loops`](https://coalton-lang.github.io/reference/#coalton-library/experimental/loops-package) contains a plethora of Lisp-style iteration macros, including `dotimes` and `dolist` which operate similar to their Common Lisp counterparts.
+The standard library package [`coalton/experimental/loops`](https://coalton-lang.github.io/reference/#coalton/experimental/loops-package) contains a plethora of Lisp-style iteration macros, including `dotimes` and `dolist` which operate similar to their Common Lisp counterparts.
 
 The functions generally return `Unit` unless they're specifically collecting or accumulating a value. Counts (like in `dotimes`) and indices (like in `dolist-enumerated`) are generally `UFix`.
 
@@ -718,7 +809,7 @@ We can inform Coalton that our constants are of another type by constraining the
 COALTON-USER> (coalton (the F32 (/ 4 2)))
 2.0
 COALTON-USER> (coalton (the Fraction (/ 4 2)))
-#.(COALTON-LIBRARY::%FRACTION 2 1)
+#.(COALTON::%FRACTION 2 1)
 ```
 
 An `Integer` result from division with `/` is not possible, as the instance `Dividable Integer Integer` is not defined:
@@ -765,9 +856,9 @@ All of these cases are sufficiently common that we provide a few shorthands:
 Fractions can be converted to other dividable types using `fromfrac` (Note: This may result in precision loss):
 
 ```
-COALTON-LIBRARY/MATH/REAL> (coalton (the F64 (fromfrac 1/2)))
+COALTON/MATH/REAL> (coalton (the F64 (fromfrac 1/2)))
 0.5d0
-COALTON-LIBRARY/MATH/REAL> (coalton (the F32 (fromfrac 999/1000)))
+COALTON/MATH/REAL> (coalton (the F32 (fromfrac 999/1000)))
 0.999
 ```
 
@@ -844,7 +935,7 @@ Type declarations can also be added in `let` expressions
 
 ### Type Casting, Coercing, and Conversion
 
-Coalton manages type conversions similar to the Common Lisp function `cl:coerce` by way of a type class called `Into` (of the package `#:coalton-library/classes`) and its sole method `into`. However, the `into` method only takes a single argument. How should Coalton know which data type to convert to? It determines this either by type inference (i.e., by the surrounding context) as in this example, where `substring` expects a `String`:
+Coalton manages type conversions similar to the Common Lisp function `cl:coerce` by way of a type class called `Into` (of the package `#:coalton/classes`) and its sole method `into`. However, the `into` method only takes a single argument. How should Coalton know which data type to convert to? It determines this either by type inference (i.e., by the surrounding context) as in this example, where `substring` expects a `String`:
 
 ```lisp
 (coalton-toplevel
@@ -950,7 +1041,7 @@ Functions can pattern match on their arguments, but the patterns must be exhaust
 
 ```
 
-The operator `coalton-library:if` can be used as a shorthand when matching on Booleans:
+The operator `coalton:if` can be used as a shorthand when matching on Booleans:
 
 ```lisp
 (coalton-toplevel
@@ -981,7 +1072,7 @@ Several `if` expressions can be combined with a `cond`:
       (True (into n)))))
 ```
 
-The Boolean operators `and` and `or` (of `coalton-library`) are actually variadic macros that short-circuit. Their functional counterparts are `boolean-and` and `boolean-or`.
+The Boolean operators `and` and `or` (of `coalton`) are actually variadic macros that short-circuit. Their functional counterparts are `boolean-and` and `boolean-or`.
 
 ```lisp
 (coalton
@@ -991,9 +1082,9 @@ The Boolean operators `and` and `or` (of `coalton-library`) are actually variadi
 In this case, `really-expensive` will never get called due to short-circuiting. Also note that both `and` and `or` can take one or more arguments.
 
 
-## `COALTON-LIBRARY:PROGN`
+## `COALTON:PROGN`
 
-Coalton has a `coalton-library:progn` construct similar to lisp.
+Coalton has a `coalton:progn` construct similar to lisp.
 
 ```lisp
 (coalton-toplevel
@@ -1061,7 +1152,7 @@ Function definitions create an implicit `progn` block
 
 ## Unless and When
 
-The `coalton-library` package also includes `unless` and `when`, which work
+The `coalton` package also includes `unless` and `when`, which work
 similarly to their definitions in Lisp. We recommend only using these operators
 for conditionalizing stateful operations.
 
@@ -1238,9 +1329,43 @@ Inline type annotations can be added to resolve ambiguities when using type clas
 
 ## Shorthand Function Syntax
 
-Coalton does not have nullary functions. However, a function with the type signature `Unit -> *` can be called in Coalton without explicitly passing `Unit`. For instance, the Coalton form `(coalton-library/vector:new)` is a shorthand for `(coalton-library/vector:new Unit)`.
+Coalton does not have nullary functions. However, a function with the type signature `Unit -> *` can be called in Coalton without explicitly passing `Unit`. For instance, the Coalton form `(coalton/vector:new)` is a shorthand for `(coalton/vector:new Unit)`.
 
 Functions can also be defined with an implicit parameter using `(fn () 5)`. This creates a function with a single implicit parameter of type `Unit`.
+
+## Inline Lisp
+
+Coalton can embed raw Common Lisp forms with `lisp`:
+
+```lisp
+(coalton-toplevel
+  (declare random-int (Integer -> Integer))
+  (define (random-int n)
+    (lisp Integer (n)
+      (cl:random n))))
+```
+
+The form is:
+
+```lisp
+(lisp <return-type> (<coalton-variables>) <lisp-form>...)
+```
+
+This is unsafe; Coalton makes no attempt to analyze anything that is happening inside of a `lisp` form. That means it's possible (and easy) to create type errors, among other things.
+
+### Multiple Values Directive `multiple-values`
+
+When the return type is a `Tuple`, you can request a multiple-value return convention by using the `multiple-values` directive:
+
+```lisp
+(coalton-toplevel
+  (declare quot-rem (Integer -> Integer -> (Tuple Integer Integer)))
+  (define (quot-rem x y)
+    (lisp multiple-values (Tuple Integer Integer) (x y)
+      (cl:truncate x y))))
+```
+
+`lisp multiple-values` requires a `Tuple` return type. The compiler can keep values unboxed through tuple-consuming code paths (for example immediate `match`, `fst`, or `snd`) and only allocate a tuple object when one is actually needed.
 
 ## Inspecting the Coalton System
 
@@ -1502,4 +1627,3 @@ For the time being, the following caveats apply;
 
 
    
-

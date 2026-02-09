@@ -2,14 +2,14 @@
 ;;;;
 ;;;; Complex numbers
 
-(coalton-library/utils:defstdlib-package #:coalton-library/math/complex
+(coalton/utils:defstdlib-package #:coalton/math/complex
     (:use #:coalton
-          #:coalton-library/classes
-          #:coalton-library/utils
-          #:coalton-library/math/arith)
+          #:coalton/classes
+          #:coalton/utils
+          #:coalton/math/arith)
   (:local-nicknames
-   (#:arith #:coalton-library/math/arith)
-   (#:types #:coalton-library/types)
+   (#:arith #:coalton/math/arith)
+   (#:types #:coalton/types)
    (#:compat #:coalton-compatibility))
   (:export
    #:Complex                            ; data type
@@ -20,7 +20,7 @@
    #:square-magnitude
    #:ii))
 
-(in-package #:coalton-library/math/complex)
+(in-package #:coalton/math/complex)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -297,4 +297,4 @@ blackboard-bold 𝕚.)"
          (match a
            ((%Complex _ b) b))))))
 
-(compat:try-lock-package "COALTON-LIBRARY/MATH/COMPLEX")
+(compat:try-lock-package "COALTON/MATH/COMPLEX")

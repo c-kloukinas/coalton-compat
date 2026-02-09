@@ -2,14 +2,15 @@
 ;;;;
 ;;;; Reals library using computable-reals (https://github.com/stylewarning/computable-reals)
 
-(defpackage #:coalton-library/computable-reals
+(defpackage #:coalton/computable-reals
+  (:nicknames #:coalton-library/computable-reals)
   (:use #:coalton
         #:coalton-prelude
-        #:coalton-library/math)
+        #:coalton/math)
   (:local-nicknames (#:cr #:computable-reals)
-                    (#:complex #:coalton-library/math/complex)
-                    (#:math #:coalton-library/math)
-                    (#:cell #:coalton-library/cell))
+                    (#:complex #:coalton/math/complex)
+                    (#:math #:coalton/math)
+                    (#:cell #:coalton/cell))
   (:export
    #:CReal
    #:set-comparison-threshold!
@@ -19,7 +20,7 @@
    #:rationalize
    #:cr-print))
 
-(in-package #:coalton-library/computable-reals)
+(in-package #:coalton/computable-reals)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -352,10 +353,8 @@ the simplest possible such approximation."
       (lisp Integer (x)
         (cr:ceiling-r x)))
     (define (proper x)
-      (lisp (Tuple Integer CReal) (x)
-        (cl:multiple-value-bind (integer-part decimal-part)
-            (cr:truncate-r x)
-          (Tuple integer-part decimal-part)))))
+      (lisp multiple-values (Tuple Integer CReal) (x)
+        (cr:truncate-r x))))
 
   (define-instance (math:Real CReal)
     (define (real-approx prec x)

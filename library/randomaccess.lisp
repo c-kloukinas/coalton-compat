@@ -1,7 +1,7 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/randomaccess
+(coalton/utils:defstdlib-package #:coalton/randomaccess
   (:use
    #:coalton
-   #:coalton-library/classes)
+   #:coalton/classes)
   (:local-nicknames
    (#:compat #:coalton-compatibility))
   (:export
@@ -19,7 +19,7 @@
    #:unsafe-rotate!
    #:rotate!))
 
-(in-package #:coalton-library/randomaccess)
+(in-package #:coalton/randomaccess)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -88,4 +88,4 @@ It is permitted for any of `make`, `unsafe-aref`, or `unsafe-set!` to error."
           (Some (unsafe-rotate! storage index1 index2))
           None))))
 
-(compat:try-lock-package "COALTON-LIBRARY/RANDOMACCESS")
+(compat:try-lock-package "COALTON/RANDOMACCESS")

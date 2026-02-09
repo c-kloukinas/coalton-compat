@@ -1,12 +1,12 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/experimental/do-control-core
+(coalton/utils:defstdlib-package #:coalton/experimental/do-control-core
   (:use
    #:coalton
-   #:coalton-library/classes
-   #:coalton-library/functions)
+   #:coalton/classes
+   #:coalton/functions)
   (:local-nicknames
-   (:l #:coalton-library/list)
-   (:opt #:coalton-library/optional)
-   (:rst #:coalton-library/result)
+   (:l #:coalton/list)
+   (:opt #:coalton/optional)
+   (:rst #:coalton/result)
    (#:compat #:coalton-compatibility))
   (:export
    #:when_
@@ -44,7 +44,7 @@
    #:do-when-match
    #:do-if-match))
 
-(in-package #:coalton-library/experimental/do-control-core)
+(in-package #:coalton/experimental/do-control-core)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -418,4 +418,4 @@ wrapped in a 'do' block, with the yielded value bound to SYM."
       (do-match ,sym
         ,@body))))
 
-(compat:try-lock-package "COALTON-LIBRARY/EXPERIMENTAL/DO-CONTROL-CORE")
+(compat:try-lock-package "COALTON/EXPERIMENTAL/DO-CONTROL-CORE")

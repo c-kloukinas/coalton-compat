@@ -66,6 +66,7 @@
                              (:file "unify")
                              (:file "fundeps")
                              (:file "environment")
+                             (:file "variance")
 
                              (:module "redef-detection"
                               :pathname "../redef-detection/"
@@ -129,6 +130,7 @@
                              (:file "canonicalizer")
                              (:file "inliner")
                              (:file "specializer")
+                             (:file "multiple-values")
                              (:file "optimizer")
 
                              ;; Entry points

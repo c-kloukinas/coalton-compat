@@ -2,14 +2,14 @@
 ;;;;
 ;;;; Numbers that exist on the real number line
 
-(coalton-library/utils::defstdlib-package #:coalton-library/math/real
+(coalton/utils::defstdlib-package #:coalton/math/real
     (:use
      #:coalton
-     #:coalton-library/math/arith
-     #:coalton-library/math/fraction
-     #:coalton-library/math/integral
-     #:coalton-library/classes
-     #:coalton-library/functions)
+     #:coalton/math/arith
+     #:coalton/math/fraction
+     #:coalton/math/integral
+     #:coalton/classes
+     #:coalton/functions)
   (:local-nicknames
    (#:compat #:coalton-compatibility))
   (:export
@@ -36,7 +36,7 @@
    #:round/
    #:fromfrac))
 
-(in-package #:coalton-library/math/real)
+(in-package #:coalton/math/real)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -185,10 +185,8 @@ Furthermore, `best-approx` returns the simplest fraction, and both functions may
              (cl:nth-value 0 (cl:ceiling q))))
          (inline)
          (define (proper q)
-           (lisp (Tuple Integer ,type) (q)
-             (cl:multiple-value-bind (n r)
-                 (cl:truncate q)
-               (Tuple n r)))))
+           (lisp multiple-values (Tuple Integer ,type) (q)
+             (cl:truncate q))))
 
        (specialize truncate ,trunc (,type -> Integer))
        (inline)
@@ -303,4 +301,4 @@ Specifically, target types must have an instance of `Dividable Integer :a`.
 This conversion may result in loss of fidelity."
     (general/ (numerator q) (denominator q))))
 
-(compat:try-lock-package "COALTON-LIBRARY/MATH/REAL")
+(compat:try-lock-package "COALTON/MATH/REAL")

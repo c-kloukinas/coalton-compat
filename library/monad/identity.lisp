@@ -1,15 +1,15 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/monad/identity
+(coalton/utils:defstdlib-package #:coalton/monad/identity
   (:use
    #:coalton
-   #:coalton-library/builtin
-   #:coalton-library/classes)
+   #:coalton/builtin
+   #:coalton/classes)
   (:local-nicknames
    (#:compat #:coalton-compatibility))
   (:export
    #:Identity
    #:run-identity))
 
-(in-package #:coalton-library/monad/identity)
+(in-package #:coalton/monad/identity)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -44,4 +44,4 @@
     (define (>>= (Identity a) fa->idb)
       (fa->idb a))))
 
-(compat:try-lock-package "COALTON-LIBRARY/MONAD/IDENTITY")
+(compat:try-lock-package "COALTON/MONAD/IDENTITY")

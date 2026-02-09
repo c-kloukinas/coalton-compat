@@ -1,18 +1,18 @@
-(coalton-library/utils:defstdlib-package #:coalton-library/slice
+(coalton/utils:defstdlib-package #:coalton/slice
   (:use
    #:coalton
-   #:coalton-library/builtin
-   #:coalton-library/functions
-   #:coalton-library/classes
-   #:coalton-library/math)
+   #:coalton/builtin
+   #:coalton/functions
+   #:coalton/classes
+   #:coalton/math)
   (:local-nicknames
-   (#:types #:coalton-library/types)
-   (#:cell #:coalton-library/cell)
-   (#:iter #:coalton-library/iterator)
-   (#:list #:coalton-library/list)
-   (#:vector #:coalton-library/vector)
+   (#:types #:coalton/types)
+   (#:cell #:coalton/cell)
+   (#:iter #:coalton/iterator)
+   (#:list #:coalton/list)
+   (#:vector #:coalton/vector)
    (#:compat #:coalton-compatibility))
-  (:shadowing-import-from #:coalton-library/vector #:Vector)
+  (:shadowing-import-from #:coalton/vector #:Vector)
   (:export
    #:Slice
    #:new
@@ -24,7 +24,7 @@
    #:iter-chunked
    #:iter-chunked-exact))
 
-(in-package #:coalton-library/slice)
+(in-package #:coalton/slice)
 
 (named-readtables:in-readtable coalton:coalton)
 
@@ -218,4 +218,4 @@
 
   (define-instance (Iso (Slice :a) (Vector :a))))
 
-(compat:try-lock-package "COALTON-LIBRARY/SLICE")
+(compat:try-lock-package "COALTON/SLICE")
