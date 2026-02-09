@@ -4,13 +4,17 @@
     #:coalton-compatibility
   (:use #:cl)
   (:export
-   #:get-fixnum-bits
+   #:get-bytes-consed
 
-   #:get-hash-type
    #:unset-all-float-traps
+
+   #:get-fixnum-bits
+   #:get-hash-type
    #:hash-combine))
 
 (cl:in-package #:coalton-compatibility)
+
+;;; Hashing (or sbcl allegro ccl abcl ecl) - hopefully it's generic.
 
 ;; define first, as it's used by others and we want it inlined
 (declaim (inline get-fixnum-bits))
@@ -38,16 +42,6 @@
 ;; add 1 bit since we're using the sign bit as well (the hash is unsigned)
 (defmacro get-hash-type ()
   `'(cl:unsigned-byte ,(coalton-compatibility:get-fixnum-bits)))
-
-(defmacro unset-all-float-traps ()
-  '(cl:eval-when (:compile-toplevel :load-toplevel :execute)
-    #+ccl (ccl:set-fpu-mode :overflow nil :underflow nil :division-by-zero nil :invalid nil :inexact nil)
-    #+sbcl (sb-int:set-floating-point-modes :traps nil)
-    #+abcl (extensions:set-floating-point-modes :traps nil)
-    #+ecl  (ext:trap-fpe 'cl:t nil)
-    #-(or sbcl allegro ccl abcl ecl)
-    #.(cl:error "don't know how to unset all float traps on ~A" (cl:lisp-implementation-type))
-    ))
 
 (pushnew
  (cond ((= 16 (integer-length cl:most-positive-fixnum))
@@ -156,3 +150,43 @@
    #-(or |COALTON:32-BIT-FIXNUM| |COALTON:16-BIT-FIXNUM|)
    (combine-64bit lhs rhs)
    cl:most-positive-fixnum))
+
+;;; Unset float traps (or sbcl allegro ccl abcl ecl)
+(defmacro unset-all-float-traps ()
+  '(cl:eval-when (:compile-toplevel :load-toplevel :execute)
+    #+ccl (ccl:set-fpu-mode :overflow nil :underflow nil :division-by-zero nil :invalid nil :inexact nil)
+    #+sbcl (sb-int:set-floating-point-modes :traps nil)
+    #+abcl (extensions:set-floating-point-modes :traps nil)
+    #+ecl  (ext:trap-fpe 'cl:t nil)
+    #-(or sbcl allegro ccl abcl ecl)
+    #.(cl:error "don't know how to unset all float traps on ~A" (cl:lisp-implementation-type))
+    ))
+
+;;; Get bytes consed. (or sbcl abcl)
+#+abcl
+(defconstant the-com-sun-management-ThreadMXBean-interface
+  (java:jstatic
+   (java:jmethod "java.lang.Class" "forName" "java.lang.String")
+   nil
+   "com.sun.management.ThreadMXBean"))
+#+abcl
+(defconstant thePlatformMXBean
+  (java:jstatic
+   (java:jmethod "java.lang.management.ManagementFactory" "getPlatformMXBean"
+                 "java.lang.Class")
+   nil
+   the-com-sun-management-ThreadMXBean-interface))
+#+abcl
+(defun getTotalThreadAllocatedBytes ()
+  (java:jcall
+   (java:jmethod "com.sun.management.ThreadMXBean" "getTotalThreadAllocatedBytes")
+   thePlatformMXBean))
+#+(or sbcl abcl)
+(pushnew ':|COALTON:HAS-GET-BYTES-CONSED| cl:*features*)
+(defun get-bytes-consed ()
+  #+sbcl
+  (sb-ext:get-bytes-consed)
+  #+(and abcl)
+  (getTotalThreadAllocatedBytes)
+  #-(or sbcl abcl)
+  0)
