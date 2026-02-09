@@ -45,6 +45,8 @@
     #+sbcl (sb-int:set-floating-point-modes :traps nil)
     #+abcl (extensions:set-floating-point-modes :traps nil)
     #+ecl  (ext:trap-fpe 'cl:t nil)
+    #-(or sbcl allegro ccl abcl ecl)
+    #.(cl:error "don't know how to unset all float traps on ~A" (cl:lisp-implementation-type))
     ))
 
 (pushnew
