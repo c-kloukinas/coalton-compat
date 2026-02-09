@@ -276,5 +276,4 @@ Garbage collection will be performed before profiling is performed."
                (Some (uiop:argv0))
                None)))))
 
-#+sb-package-locks
-(sb-ext:lock-package "COALTON/SYSTEM")
+(compat:try-lock-package "COALTON/SYSTEM")

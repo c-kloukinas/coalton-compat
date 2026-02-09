@@ -4,6 +4,15 @@
     #:coalton-compatibility
   (:use #:cl)
   (:export
+   ;; try-* are macros/functions that most probably will never be
+   ;; implemented by all Lisps.
+   ;;
+   ;; For the rest (not starting with try-), while an implementation
+   ;; may not exist at the moment for some Lisp, it might exist in the
+   ;; future (and probably should if we want to port there).
+   #:try-lock-package
+   #:try-unlock-package
+
    #:get-bytes-consed
 
    #:unset-all-float-traps
@@ -190,3 +199,20 @@
   (getTotalThreadAllocatedBytes)
   #-(or sbcl abcl)
   0)
+
+;;; Package locks (or sbcl ecl)
+
+#+ecl(require '#:package-locks)
+(defmacro try-lock-package (the-package)
+  #-(or sbcl ecl)(declare (ignore the-package))
+  #+sb-package-locks
+  `(sb-ext:lock-package ,the-package)
+  #+ecl
+  `(ext:lock-package ,the-package))
+
+(defmacro try-unlock-package (the-package)
+  #-(or sbcl ecl)(declare (ignore the-package))
+  #+sb-package-locks
+  `(sb-ext:unlock-package ,the-package)
+  #+ecl
+  `(ext:unlock-package ,the-package))
