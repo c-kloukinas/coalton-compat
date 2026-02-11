@@ -167,7 +167,8 @@
     #+sbcl (sb-int:set-floating-point-modes :traps nil)
     #+abcl (extensions:set-floating-point-modes :traps nil)
     #+ecl  (ext:trap-fpe 'cl:t nil)
-    #-(or sbcl allegro ccl abcl ecl)
+    #+clasp (core:fe-disable-except  0)
+    #-(or sbcl allegro ccl abcl ecl clasp)
     #.(cl:error "don't know how to unset all float traps on ~A" (cl:lisp-implementation-type))
     ))
 
@@ -207,12 +208,12 @@
   #-(or sbcl ecl)(declare (ignore the-package))
   #+sb-package-locks
   `(sb-ext:lock-package ,the-package)
-  #+ecl
+  #+(or ecl clasp)
   `(ext:lock-package ,the-package))
 
 (defmacro try-unlock-package (the-package)
   #-(or sbcl ecl)(declare (ignore the-package))
   #+sb-package-locks
   `(sb-ext:unlock-package ,the-package)
-  #+ecl
+  #+(or ecl clasp)
   `(ext:unlock-package ,the-package))
