@@ -160,14 +160,18 @@
    (combine-64bit lhs rhs)
    cl:most-positive-fixnum))
 
-;;; Unset float traps (or sbcl allegro ccl abcl ecl)
+;;; Unset float traps (or sbcl allegro ccl abcl ecl clasp)
 (defmacro unset-all-float-traps ()
   '(cl:eval-when (:compile-toplevel :load-toplevel :execute)
     #+ccl (ccl:set-fpu-mode :overflow nil :underflow nil :division-by-zero nil :invalid nil :inexact nil)
     #+sbcl (sb-int:set-floating-point-modes :traps nil)
     #+abcl (extensions:set-floating-point-modes :traps nil)
     #+ecl  (ext:trap-fpe 'cl:t nil)
-    #+clasp (core:fe-disable-except  0)
+    #+clasp (core:fe-disable-except (logior core:+fe-underflow+
+                                            core:+fe-overflow+
+                                            core:+fe-invalid+
+                                            core:+fe-inexact+
+                                            core:+fe-divbyzero+))
     #-(or sbcl allegro ccl abcl ecl clasp)
     #.(cl:error "don't know how to unset all float traps on ~A" (cl:lisp-implementation-type))
     ))
