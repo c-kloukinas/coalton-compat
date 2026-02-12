@@ -181,7 +181,8 @@
   :license "MIT"
   :version (:read-file-form "VERSION.txt")
   :depends-on ("coalton"
-               "fiasco")
+               "fiasco"
+               #+abcl "compat/abcl-fiasco-patch")
   :pathname "src/testing/"
   :serial t
   :components ((:file "package")
@@ -277,6 +278,7 @@
                "coalton/library/algorithms"
                "coalton/testing"
                "fiasco"
+               #+abcl "compat/abcl-fiasco-patch"
                "quil-coalton/tests"
                "thih-coalton/tests")
   :perform (asdf:test-op (o s)
