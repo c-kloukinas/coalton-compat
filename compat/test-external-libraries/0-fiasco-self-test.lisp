@@ -1,0 +1,7 @@
+(ql:quickload :fiasco)
+(format *error-output* "~%	*** Loaded fiasco ***~%")
+#+abcl (load "compat/abcl-fiasco-patch")
+(ql:quickload :fiasco-self-tests)
+(format *error-output* "~%	*** Loaded fiasco-self-tests ***~%")
+(defconstant *fiasco-self-test-res* (asdf:test-system :fiasco))
+(format *error-output* "~%	*** Testing fiasco resulted to ~A ***~%" *fiasco-self-test-res*)

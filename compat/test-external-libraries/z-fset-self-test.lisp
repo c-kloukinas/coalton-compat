@@ -1,0 +1,6 @@
+(ql:quickload :fset)
+(format *error-output* "~%	*** Loaded fset ***~%")
+(ql:quickload :fset/test)
+(format *error-output* "~%	*** Loaded fset/test ***~%")
+(defconstant *fset-self-test-res* (asdf:test-system :fset))
+(format *error-output* "~%	*** Testing fset resulted to ~A ***~%" *fset-self-test-res*)
