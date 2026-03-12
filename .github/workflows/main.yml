@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ compat-in-small-pieces ]
   pull_request:
-    branches: [ main ]
+    branches: [ compat-in-small-pieces ]
 
   workflow_dispatch:
 
