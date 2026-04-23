@@ -1,0 +1,43 @@
+#! /bin/sh -
+
+LISP=${LISP:-sbcl}
+# Just run with env RLWRAP= script-name if you don't want rlwrap
+RLWRAP=${RLWRAP:-`which rlwrap`}
+
+MYDIR=`dirname "$0"`
+COALTON_DIR=`(cd "${MYDIR}/.." ; pwd)`
+if [ ! -f ${COALTON_DIR}/coalton.asd ] ; then
+  echo `basename $0`: Must be run from the coalton directory >&2
+  exit 1
+fi
+
+run_with_no_init () {
+  case ${LISP} in
+    sbcl)
+        echo ${LISP} --no-userinit
+        ;;
+    ccl)
+        echo ${LISP} --no-init
+        ;;
+    abcl)
+        echo ${LISP} --noinit
+        ;;
+    ecl)
+        echo ${LISP} --norc
+        ;;
+    clasp)
+        echo ${LISP} --norc
+        ;;
+    *)
+        echo 'Unknown Lisp "'${LISP} >&2
+        exit 1
+  esac
+}
+COMP=`run_with_no_init`
+
+env CL_SOURCE_REGISTRY="${COALTON_DIR}//:~/quicklisp//" \
+  ${RLWRAP} ${COMP} \
+              --load ~/quicklisp/asdf.lisp \
+              --load "${COALTON_DIR}/scripts/load-tests-in-parallel.lisp" \
+              --eval "(do-run-tests)" \
+  2>&1
