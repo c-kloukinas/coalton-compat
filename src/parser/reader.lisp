@@ -8,6 +8,7 @@
    #:parse-error)
   (:export
    #:*coalton-eclector-client*
+   #:*current-source*
    #:install-coalton-reader-syntax
    #:collection-builder-marker
    #:association-builder-marker
@@ -88,6 +89,22 @@
 ;; syntax-specific source spans forward until Eclector builds the CST for the
 ;; exact list object returned by the reader macro.
 
+(defvar *current-source* nil
+  "The source being read, or NIL when it is unknown.
+
+MAYBE-READ-FORM binds this to the source whose text it is reading, so that the
+reader macros it installs can turn the offsets FILE-POSITION reports on the
+stream into the character offsets spans are measured in.")
+
+(defun char-offset-before (stream position)
+  "Return the character offset that starts the character ending at POSITION.
+
+POSITION is an offset reported by FILE-POSITION on STREAM and falls on a
+character boundary. A file stream reports that offset in bytes, so it is
+converted before being used as the character offset it stands for."
+  (1- (car (source:stream-span-to-char-span stream *current-source*
+                                            (cons position position)))))
+
 (defun make-cst-atom (raw source)
   (make-instance 'cst:atom-cst
     :raw raw
@@ -146,11 +163,12 @@
 (defun read-short-lambda-form (stream char)
   "Reader macro for `ƒx.body`, desugaring it to `(fn (x) body)`."
   (declare (ignore char))
-  (let ((start (1- (file-position stream)))
+  (let ((start (char-offset-before stream (file-position stream)))
         (params nil)
         (seen-names (make-hash-table :test #'eq)))
     (loop :for param-char := (read-char stream nil nil)
-          :for position := (and param-char (1- (file-position stream)))
+          :for position := (and param-char
+                                (char-offset-before stream (file-position stream)))
           :do
              (cond
                ((null param-char)
@@ -530,9 +548,11 @@
   (let* ((start (1- (file-position stream)))
          (raw (desugar-bracket-builder
                (eclector.reader:read-delimited-list #\] stream t)))
-         (end (file-position stream)))
+         (end (file-position stream))
+         (span (source:stream-span-to-char-span stream *current-source*
+                                                (cons start end))))
     (setf (gethash raw *reader-source-table*)
-          (make-bracket-form (cons start end)))
+          (make-bracket-form span))
     raw))
 
 (defmethod eclector.parse-result:make-expression-result
@@ -632,13 +652,19 @@
   "Read the next form or return if there is no next form.
 
 Returns (VALUES FORM PRESENTP EOFP)"
-  (let ((begin (file-position stream)))
+  (let ((begin (file-position stream))
+        (*current-source* source))
     (handler-case
         (loop :do
           ;; On empty lists report nothing
           (when (eq #\) (peek-char t stream nil))
             (read-char stream)
             (return (values nil nil nil)))
+
+          ;; PEEK-CHAR above skipped leading whitespace, so the next form
+          ;; starts here. Reporting the offset from before the skip would
+          ;; start the span on the previous line.
+          (setf begin (file-position stream))
 
           ;; Otherwise, try to read in the next form
           (multiple-value-call
@@ -661,12 +687,15 @@ Returns (VALUES FORM PRESENTP EOFP)"
              stream
              nil 'eof)))
       (eclector.reader:unterminated-list ()
-        (let ((end (file-position stream)))
+        (let ((span (source:stream-span-to-char-span
+                     stream source (cons begin (file-position stream)))))
           (parse-error "Unterminated form"
-                       (source:note (source:make-location source (cons begin end))
-                                    "Missing close parenthesis for form starting at offset ~a" begin))))
+                       (source:note (source:make-location source span)
+                                    "Missing close parenthesis for form starting at offset ~a"
+                                    (source:span-start span)))))
       (error (condition)
-        (let ((end (file-position stream)))
+        (let ((span (source:stream-span-to-char-span
+                     stream source (cons begin (file-position stream)))))
           (parse-error "Reader error"
-                       (source:note (source:make-location source (cons begin end))
+                       (source:note (source:make-location source span)
                                     "reader error: ~a" condition)))))))
