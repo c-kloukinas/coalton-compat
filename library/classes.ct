@@ -4,8 +4,10 @@
   (:local-nicknames
    (#:types #:coalton/types))
   (:export
-   #:Signalable
    #:error
+   #:Exception
+   #:Resumption
+   #:Panic
    #:Tuple
    #:Optional #:Some #:None
    #:Result #:Ok #:Err
@@ -43,6 +45,7 @@
    #:TryInto
    #:Iso
    #:Unwrappable #:unwrap-or-else #:with-default #:unwrap #:unwrap-into #:expect #:as-optional
+   #:Fallible #:split-failure
    #:default #:defaulting-unwrap #:default?))
 
 (in-package #:coalton/classes)
@@ -51,23 +54,53 @@
 (cl:declaim #.coalton-impl/settings:*coalton-optimize-library*)
 
 ;;;
-;;; Signaling errors and warnings
+;;; Signaling panics and exceptions
 ;;;
+
+;; The (repr :native Panic) attribute below checks this condition type when
+;; it is compiled, so the type must be defined at compile time too.
+(cl:eval-when (:compile-toplevel :load-toplevel :execute)
+  (cl:define-condition Panic (cl:error)
+    ((message :initarg :message
+              :reader %panic-message
+              :type cl:string))
+    (:report (cl:lambda (condition stream)
+               (cl:write-string (%panic-message condition) stream)))
+    (:documentation "The condition signaled when a Coalton program detects a bug at runtime, for example through `error`, `unwrap`, `unreachable`, or a failed `assert`.")))
 
 (coalton-toplevel
 
- ;;
- ;; Signalling errors on supported types
- ;;
- (define-class (Signalable :a)
-   "Signals errors or warnings by calling their respective lisp conditions."
-   (error "Signal an error with a type-specific error string."
-     (forall ((:result Values)) (:a -> :result))))
+  ;;
+  ;; Panics
+  ;;
 
-  (define-instance (Signalable String)
-    (define (error str)
-      (lisp (-> :result) (str)
-        (cl:error str)))))
+  (declare error (forall ((:result Values)) (String -> :result)))
+  (define (error message)
+    "Signal a `Panic` whose message is `message`, to report a bug detected at runtime. The message is never interpreted as a format control string.
+
+To signal an exception that a program is expected to handle, use `throw`."
+    (lisp (-> :result) (message)
+      (cl:error 'Panic :message message)))
+
+  ;;
+  ;; Exceptions
+  ;;
+
+  (define-class (types:RuntimeRepr :e => Exception :e)
+    "Types whose values can be thrown with `throw` and caught with `catch` or `handle`.
+
+Every type defined with `define-exception` is an instance, and instances cannot be written manually. A value of an exception type is a Lisp condition whose type is the `runtime-repr` of the exception type.")
+
+  (define-class (types:RuntimeRepr :r => Resumption :r)
+    "Types whose values can be passed to `resume-to`.
+
+Every type defined with `define-resumption` is an instance, and instances cannot be written manually."))
+
+;; Defined after the Exception class, which its generated instance needs.
+(coalton-toplevel
+  (repr :native Panic)
+  (define-exception Panic
+    "A bug detected at runtime, for example by `error`, `unwrap`, `unreachable`, or a failed `assert`. Panics are caught by wildcard `catch` branches, like other Lisp errors, and can be caught specifically with a `(the Panic p)` branch."))
 
 
 (coalton-toplevel
@@ -126,7 +159,10 @@
   #+ccl
   (repr :native (cl:and cl:fixnum cl:unsigned-byte))
 
-  #-(or sbcl allegro ccl)
+  #+dotcl
+  (repr :native (cl:and cl:fixnum cl:unsigned-byte))
+
+  #-(or sbcl allegro ccl dotcl)
   #.(cl:error "hashing is not supported on ~A" (cl:lisp-implementation-type))
 
   (define-type Hash
@@ -479,9 +515,9 @@ instance authors:
         (Into (:f :a) (Seq :a) => :f :a -> Seq :a))
       (define (to-seq xs) (into xs))
 
-  `Foldable :f` and `RuntimeRepr :a` alone are insufficient here.
-  They describe one candidate instance's requirements; a caller may select a
-  more-specific instance with different requirements.
+  `Foldable :f` alone is insufficient here. It describes one candidate
+  instance's requirements; a caller may select a more-specific instance with
+  different requirements.
 
 - New instances can overlap the identity instance whenever their source and
   destination types can become equal. Every distinct instance participating
@@ -602,6 +638,16 @@ Typical `fail` continuations are:
                     (fn () None)
                     container))
 
+
+  ;;
+  ;; Fallible for returning failures early with NEED
+  ;;
+
+  (define-class (Fallible :f)
+    "Containers that hold either a value or a failure, such as `Result` and `Optional`. `need` uses this class to return failures from functions early."
+    (split-failure
+     "Return the value in CONTAINER in `Ok`, or its failure in `Err`. The failure is given a new value type so that it can be returned from a function whose result holds a different type of value."
+     ((:f :a) -> (Result (:f :b) :a))))
 
   ;;
   ;; Default

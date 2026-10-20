@@ -6,7 +6,6 @@
    #:coalton/functions
    #:coalton/classes)
   (:local-nicknames
-   (#:types #:coalton/types)
    (#:math #:coalton/math)
    (#:optional #:coalton/optional)
    (#:cell #:coalton/cell)
@@ -23,7 +22,9 @@
    #:put
    #:empty?
    #:conc
-   #:make))
+   #:make
+   #:fold-range
+   #:map-with))
 
 (in-package #:coalton/seq)
 
@@ -36,13 +37,6 @@
 ;;; See: 
 ;;; https://www.semanticscholar.org/paper/RRB-Trees%3A-Efficient-Immutable-Vectors-Bagwell-Rompf/30c8c562f6421ab6b00d0b7faebd897c407de69c
 ;;; 
-
-;;; Private utility macro for convenient matching of a single case of a ADT
-(cl:eval-when (:compile-toplevel :load-toplevel :execute)
-  (cl:defmacro match1 (pattern form cl:&body body)
-    `(match ,form
-       (,pattern ,@body)
-       (_ (unreachable)))))
 
 (coalton-toplevel 
   ;;
@@ -63,7 +57,7 @@
      (vector:Vector (Seq :a)))         ; subtrees
     (LeafArray (vector:Vector :a)))
 
-  (declare new (types:RuntimeRepr :a => (Void -> Seq :a)))
+  (declare new (Void -> Seq :a))
   (define (new)
     "Create a new empty `Seq`."
     (LeafArray (vector:new)))
@@ -81,8 +75,8 @@
 
   (declare get (Seq :a * UFix -> Optional :a))
   (define (get seq idx)
-    "Get the member of `seq` at index `idx`, or `None` if `idx` is larger
-than `(size seq)`"
+    "Get the member of `seq` at index `idx`, or `None` if `idx` is at least
+`(size seq)`."
     (match seq
       ((LeafArray leaves)
        (vector:index idx leaves))
@@ -131,103 +125,133 @@ contains `a`."
   (define (pop seq)
     "If `seq` is empty, return `None`. Otherwise, the last member of `seq` and
 a new `Seq` instance."
-    (match seq
-      ((LeafArray leaves)
-       (do
-        (let newleaves = (vector:copy leaves))
-        (leaf <- (vector:pop! newleaves))
-         (pure (Tuple leaf (LeafArray newleaves)))))
+    (match (%pop seq)
+      ((Some (Tuple x rest)) (Some (Tuple x (%collapse rest))))
+      ((None) None)))
 
-      ((RelaxedNode h fss cst sts)
-       (do
-        ((Tuple leaf newsub) <- (pop (vector:last-unsafe sts)))
-        (let newsts = (vector:copy sts))
-        (let newcst = (vector:copy cst))
-        (let last-idx = (- (vector:length cst) (the UFix 1)))
-        (let seq-size = (size seq))
-         (pure
-          (cond
-            ;; this was the only thing left in seq
-            ((== (the UFix 1) seq-size)
-             (Tuple leaf newsub))     ; newsub is empty
-
-            ;; the seq was exactly one larger than the subtree size
-            ;; for the current height, this means we can reduce the tree height
-            ((== (+ (the UFix 1) fss) seq-size)
-             (Tuple leaf (vector:index-unsafe (the UFix 0) sts)))
-
-            ;; it wasn't, but newsub is empty
-            ((math:zero? (size newsub))
-             (vector:pop! newcst)
-             (vector:pop! newsts)
-             (Tuple leaf (RelaxedNode h fss newcst newsts)))
-
-            (True
-             (vector:set! last-idx (- (vector:last-unsafe newcst) (the UFix 1)) newcst)
-             (vector:set! last-idx newsub newsts)
-             (Tuple leaf (RelaxedNode h fss newcst newsts)))))))))
-
-  (declare conc (types:RuntimeRepr :a => Seq :a * Seq :a -> Seq :a))
+  (declare conc (Seq :a * Seq :a -> Seq :a))
   (define (conc left right)
     "Concatenate two `Seq`s"
     (cond
       ((empty? left) right)
       ((empty? right) left)
       (True
-       (match (Tuple left right)
-         ((Tuple (LeafArray _) (LeafArray _))
-          (rebalance-branches (vector:make left right)))
+       (let ((lh (height left))
+             (rh (height right)))
+         ;; Merge the right edge of LEFT with the left edge of RIGHT,
+         ;; recursively, then rebalance the subtrees at each level. The
+         ;; recursive concatenation can be shorter or taller than the
+         ;; subtrees it replaces, so it is converted to subtrees of their
+         ;; height first.
+         (cond
+           ((< lh rh)
+            (let ((rsubs (%subtrees right)))
+              (rebalance-branches
+               (vector:append (%subtrees-of-height (- rh 1) (conc left (vector:head-unsafe rsubs)))
+                              (butfirst rsubs)))))
+           ((> lh rh)
+            (let ((lsubs (%subtrees left)))
+              (rebalance-branches
+               (vector:append (butlast lsubs)
+                              (%subtrees-of-height (- lh 1) (conc (vector:last-unsafe lsubs) right))))))
+           ((== lh 1)
+            (rebalance-branches (vector:make left right)))
+           (True
+            (let ((lsubs (%subtrees left))
+                  (rsubs (%subtrees right)))
+              (rebalance-branches
+               (vector:append
+                (vector:append (butlast lsubs)
+                               (%subtrees-of-height
+                                (- lh 1)
+                                (conc (vector:last-unsafe lsubs) (vector:head-unsafe rsubs))))
+                (butfirst rsubs))))))))))
 
-         ((Tuple (LeafArray _) (RelaxedNode _ht _fss _cst subts))
-          (match (conc left (vector:head-unsafe subts))
-            ((LeafArray leaves)
-             (rebalance-branches (replace-first subts (LeafArray leaves))))
-            
-            ((RelaxedNode _nht _nfss _ncst nsubts)
-             (rebalance-branches (vector:append nsubts (butfirst subts))))))
-         
-         ((Tuple (RelaxedNode _ht _fss _cst subts)  (LeafArray _))
-          (match (conc (vector:last-unsafe subts) right)
-            ((LeafArray leaves)
-             (rebalance-branches (replace-last subts (LeafArray leaves))))
-            
-            ((RelaxedNode _nht _nfss _ncst nsubts)
-             (rebalance-branches (vector:append (butlast subts) nsubts)))))
+  ;;
+  ;; Folding over ranges, and mapping in chunks
+  ;;
 
-         ((Tuple (RelaxedNode lht _lfss _lcst lsubts) (RelaxedNode rht _rfss _rcst rsubts))
-          (cond ((< lht rht)
-                 (match1 (RelaxedNode _nht _nfss _ncst nsubts) 
-                     (conc left (vector:head-unsafe rsubts)) 
-                   (rebalance-branches
-                    (vector:append nsubts (butfirst rsubts)))))
-                ((> lht rht)
-                 (match1 (RelaxedNode _nht _nfss _ncst nsubts) 
-                     (conc (vector:last-unsafe lsubts) right)
-                   (rebalance-branches
-                    (vector:append (butlast lsubts) nsubts))))
-                (True
-                 (match1 (RelaxedNode _nht _nfss _ncst nsubts)
-                     (conc (vector:last-unsafe lsubts) (vector:head-unsafe rsubts))
-                   (rebalance-branches
-                    (fold <> (butlast lsubts) (make-list nsubts (butfirst rsubts))))))))))))
+  (declare fold-range ((:b * :a -> :b) * :b * Seq :a * UFix * UFix -> :b))
+  (define (fold-range f init seq start end)
+    "Fold `f` over the elements of `seq` at indices from `start` (inclusive)
+to `end` (exclusive), in order, starting with `init`, as `fold` does over
+all of the elements. Indices from `(size seq)` on are ignored. This takes
+time proportional to the number of elements folded, plus the height of
+`seq`."
+    (let ((stop (min end (size seq))))
+      (if (< start stop)
+          (%fold-range f init seq start stop)
+          init)))
+
+  (declare map-with ((UFix * UFix * (UFix * UFix -> Void) -> Void)
+                     * (:a -> :b) * Seq :a -> Seq :b))
+  (define (map-with for-chunks f seq)
+    "Apply `f` to every element of `seq`, as `map` does, using `for-chunks`
+to divide the work.
+
+Unless `seq` is empty, `for-chunks` is called once, with the indices 0
+and `(size seq)` and a function of two indices. It must call that
+function on disjoint, nonempty chunks of indices, each given by its
+first index and the index after its last, that together cover the
+indices from its first argument to its second, and return once all of
+these calls have returned. The calls may happen in any order, and at the
+same time, so `for-chunks` can make them in parallel, as
+`coalton/threads/parallel:for-chunks!` does. `f` is only called within
+these calls.
+
+The result has the same structure as `seq`. Each leaf of the tree is
+mapped by the call on the chunk containing its first index."
+    (match seq
+      ((LeafArray leaves)
+       (if (vector:empty? leaves)
+           (LeafArray (map f leaves))
+           (let ((result (cell:new (LeafArray (vector:new)))))
+             (for-chunks 0 (vector:length leaves)
+                         (fn (start _)
+                           (when (math:zero? start)
+                             (cell:write! result (LeafArray (map f leaves)))
+                             (values))))
+             (cell:read result))))
+      ((RelaxedNode _ _ _ _)
+       (let ((result (%map-skeleton (LeafArray (vector:new)) seq)))
+         (unless (empty? seq)
+           (for-chunks 0 (size seq)
+                       (fn (start end)
+                         (%map-leaves f seq result 0 start end))))
+         result))))
 
   ;;
   ;; Instances
   ;; 
 
-  (define-instance (types:RuntimeRepr :a => Semigroup (Seq :a))
+  (define-instance (Semigroup (Seq :a))
     (define (<> a b)
       (conc a b)))
   
-  (define-instance (types:RuntimeRepr :a => Monoid (Seq :a))
+  (define-instance (Monoid (Seq :a))
     (define mempty (new)))
 
   (define-instance (iter:IntoIterator (Seq :a) :a)
     (define (iter:into-iter seq)
-      (match seq
-        ((LeafArray v) (iter:into-iter v))
-        ((RelaxedNode _ _ _ subs)
-         (fold iter:chain! iter:empty (map iter:into-iter subs))))))
+      (let ((leaves (%leaves seq))
+            (leaf (cell:new (vector:new)))
+            (index (cell:new 0)))
+        (iter:with-size
+         (fn ()
+           (rec % ()
+             (let ((v (cell:read leaf))
+                   (i (cell:read index)))
+               (if (< i (vector:length v))
+                   (progn
+                     (cell:write! index (+ i 1))
+                     (Some (vector:index-unsafe i v)))
+                   (match (iter:next! leaves)
+                     ((Some next)
+                      (cell:write! leaf next)
+                      (cell:write! index 0)
+                      (%))
+                     ((None) None))))))
+         (size seq)))))
 
   (define-instance (Functor Seq)
     (define (map f seq)
@@ -248,59 +272,67 @@ a new `Seq` instance."
         ((RelaxedNode _ _ _ subs)
          (foldr (fn (sub acc) (foldr f acc sub)) init subs)))))
 
-  (define-instance (types:RuntimeRepr :a => iter:FromIterator (Seq :a) :a)
+  (define-instance (iter:FromIterator (Seq :a) :a)
     (define (iter:collect! it)
-      (iter:fold! push (new) it)))
+      (%from-vector (iter:collect! it))))
 
-  (define-instance (types:RuntimeRepr :a => FromItemizedCollection (Seq :a) :a (Seq :a))
-    (define (begin-collection-builder _ _size)
-      (new))
-    (define (adjoin-to-collection-builder _ seq _index item)
-      (push seq item))
-    (define (finalize-collection-builder _ seq)
-      seq))
+  ;; The builders collect the elements in a vector, and build the tree
+  ;; at the end, in time proportional to the number of elements.
 
-  (define-instance (types:RuntimeRepr (Tuple :key :value) =>
-                    FromItemizedAssociation (Seq (Tuple :key :value))
+  (define-instance (FromItemizedCollection (Seq :a) :a (vector:Vector :a))
+    (define (begin-collection-builder _ size)
+      (vector:with-capacity size))
+    (define (adjoin-to-collection-builder _ elements _index item)
+      (vector:push! item elements)
+      elements)
+    (define (finalize-collection-builder _ elements)
+      (%from-vector elements)))
+
+  (define-instance (FromItemizedAssociation (Seq (Tuple :key :value))
                                             :key
                                             :value
-                                            (Seq (Tuple :key :value)))
-    (define (begin-association-builder _ _size)
-      (new))
-    (define (adjoin-to-association-builder _ assoc _index key value)
-      (push assoc (Tuple key value)))
-    (define (finalize-association-builder _ assoc)
-      assoc))
+                                            (vector:Vector (Tuple :key :value)))
+    (define (begin-association-builder _ size)
+      (vector:with-capacity size))
+    (define (adjoin-to-association-builder _ entries _index key value)
+      (vector:push! (Tuple key value) entries)
+      entries)
+    (define (finalize-association-builder _ entries)
+      (%from-vector entries)))
 
-  (define-instance (types:RuntimeRepr :a =>
-                    FromCollectionComprehension (Seq :a) :a (Seq :a))
-    (define (begin-collection-comprehension _ _size-hint)
-      (new))
-    (define (adjoin-to-collection-comprehension _ seq item)
-      (push seq item))
-    (define (finalize-collection-comprehension _ seq)
-      seq))
+  (define-instance (FromCollectionComprehension (Seq :a) :a (vector:Vector :a))
+    (define (begin-collection-comprehension _ size-hint)
+      (vector:with-capacity (with-default 0 size-hint)))
+    (define (adjoin-to-collection-comprehension _ elements item)
+      (vector:push! item elements)
+      elements)
+    (define (finalize-collection-comprehension _ elements)
+      (%from-vector elements)))
 
-  (define-instance (types:RuntimeRepr (Tuple :key :value) =>
-                    FromAssociationComprehension (Seq (Tuple :key :value))
+  (define-instance (FromAssociationComprehension (Seq (Tuple :key :value))
                                                  :key
                                                  :value
-                                                 (Seq (Tuple :key :value)))
-    (define (begin-association-comprehension _ _size-hint)
-      (new))
-    (define (adjoin-to-association-comprehension _ assoc key value)
-      (push assoc (Tuple key value)))
-    (define (finalize-association-comprehension _ assoc)
-      assoc))
+                                                 (vector:Vector (Tuple :key :value)))
+    (define (begin-association-comprehension _ size-hint)
+      (vector:with-capacity (with-default 0 size-hint)))
+    (define (adjoin-to-association-comprehension _ entries key value)
+      (vector:push! (Tuple key value) entries)
+      entries)
+    (define (finalize-association-comprehension _ entries)
+      (%from-vector entries)))
 
-  (define-instance (types:RuntimeRepr :a => Default (Seq :a))
+  (define-instance (Default (Seq :a))
     (define (default)
       (new)))
 
   (overlap)
-  (define-instance ((Foldable :f) (types:RuntimeRepr :a) => Into (:f :a) (Seq :a))
+  (define-instance (Foldable :f => Into (:f :a) (Seq :a))
     (define (into fld)
-      (fold push (new) fld)))
+      (%from-vector (fold (fn (elements x)
+                            (vector:push! x elements)
+                            elements)
+                          (vector:new)
+                          fld))))
 
   ;; Resolve the intersection with Into :a :a without rebuilding the sequence.
   (overlap)
@@ -312,11 +344,9 @@ a new `Seq` instance."
     (define (== a b)
       ;; because they're immutable, if they happen to be identical then == is true
       (or (lisp (-> Boolean) (a b) (cl:eq a b))
-          ;; otherwise, recurse
+          ;; otherwise, compare their elements, leaf by leaf
           (and (== (size a) (size b))
-               (iter:every! (fn ((Tuple x y)) (== x y))
-                            (iter:zip! (iter:into-iter a)
-                                       (iter:into-iter b)))))))
+               (%leaves-equal? (%leaves a) (%leaves b))))))
 
   (define-instance (show:Show :a => show:Show (Seq :a))
     (define (show:show-to f seq)
@@ -339,11 +369,15 @@ a new `Seq` instance."
 
   (define-instance (Into (Seq :a) (List :a))
     (define (into seq)
-      (iter:collect! (iter:into-iter seq))))
+      (foldr Cons Nil seq)))
 
   (define-instance (Into (Seq :a) (vector:Vector :a))
     (define (into seq)
-      (iter:collect! (iter:into-iter seq))))
+      (fold (fn (elements x)
+              (vector:push! x elements)
+              elements)
+            (vector:with-capacity (size seq))
+            seq)))
 
   ;;
   ;; Helpers
@@ -374,6 +408,205 @@ a new `Seq` instance."
                 (pure (the UFix 0)))
            (fn (last-cumulative)
              (search-forward guess last-cumulative)))))  
+
+  (declare %first-child-ending-after (vector:Vector UFix * UFix -> UFix))
+  (define (%first-child-ending-after cst index)
+    "The position of the first subtree that ends after `index`, in a node
+whose cumulative size table is `cst`, or the number of subtrees if there
+is none."
+    (rec % ((i 0))
+      (if (or (>= i (vector:length cst))
+              (> (vector:index-unsafe i cst) index))
+          i
+          (% (+ i 1)))))
+
+  (declare %fold-range ((:b * :a -> :b) * :b * Seq :a * UFix * UFix -> :b))
+  (define (%fold-range f init seq start end)
+    "Fold `f` over the elements of `seq` at indices from `start` to `end`,
+where `end` is at most `(size seq)`."
+    (match seq
+      ((LeafArray leaves)
+       (rec % ((i start) (acc init))
+         (if (>= i end)
+             acc
+             (% (+ i 1) (f acc (vector:index-unsafe i leaves))))))
+      ((RelaxedNode _ _ cst subs)
+       (rec % ((i (%first-child-ending-after cst start)) (acc init))
+         (let ((sub-start (if (math:zero? i) 0 (vector:index-unsafe (- i 1) cst))))
+           (if (or (>= i (vector:length subs)) (>= sub-start end))
+               acc
+               (let ((sub-end (vector:index-unsafe i cst)))
+                 (% (+ i 1)
+                    (%fold-range f acc (vector:index-unsafe i subs)
+                                 (- (max start sub-start) sub-start)
+                                 (- (min end sub-end) sub-start))))))))))
+
+  (declare %map-skeleton (Seq :b * Seq :a -> Seq :b))
+  (define (%map-skeleton placeholder seq)
+    "A tree with the structure and size tables of `seq`, whose leaves are
+all `placeholder`."
+    (match seq
+      ((LeafArray _) placeholder)
+      ((RelaxedNode h fss cst subs)
+       (RelaxedNode h fss cst (map (fn (sub) (%map-skeleton placeholder sub)) subs)))))
+
+  (declare %map-leaves ((:a -> :b) * Seq :a * Seq :b * UFix * UFix * UFix -> Void))
+  (define (%map-leaves f seq result offset start end)
+    "Store in `result`, a tree with the structure of `seq`, the leaves of
+`seq` mapped with `f` whose first index is from `start` (inclusive) to
+`end` (exclusive). The first element of `seq` has the index `offset`."
+    (match seq
+      ((LeafArray _) (values))
+      ((RelaxedNode _ _ cst subs)
+       (match result
+         ((LeafArray _) (unreachable))
+         ((RelaxedNode _ _ _ results)
+          (rec % ((i (%first-child-ending-after cst (if (> start offset) (- start offset) 0))))
+            (let ((sub-start (+ offset (if (math:zero? i) 0 (vector:index-unsafe (- i 1) cst)))))
+              (when (and (< i (vector:length subs)) (< sub-start end))
+                (match (vector:index-unsafe i subs)
+                  ((LeafArray leaves)
+                   (when (>= sub-start start)
+                     (vector:set! i (LeafArray (map f leaves)) results)))
+                  (sub
+                   (%map-leaves f sub (vector:index-unsafe i results) sub-start start end)))
+                (% (+ i 1))))))))))
+
+  (declare %pop (Seq :a -> Optional (Tuple :a (Seq :a))))
+  (define (%pop seq)
+    "Like `pop`, but the new tree has the height of `seq`, unless it is
+empty, in which case it is an empty leaf."
+    (match seq
+      ((LeafArray leaves)
+       (let ((n (vector:length leaves)))
+         (if (math:zero? n)
+             None
+             (let ((newleaves (vector:copy leaves)))
+               (let ((x (vector:index-unsafe (- n 1) newleaves)))
+                 (%truncate! newleaves (- n 1))
+                 (Some (Tuple x (LeafArray newleaves))))))))
+      ((RelaxedNode h fss cst sts)
+       (do
+        ((Tuple x newsub) <- (%pop (vector:last-unsafe sts)))
+        (let newsts = (vector:copy sts))
+        (let newcst = (vector:copy cst))
+        (let last-idx = (- (vector:length sts) 1))
+         (pure
+          (Tuple x
+                 (cond
+                   ((not (empty? newsub))
+                    (vector:set! last-idx newsub newsts)
+                    (vector:set! last-idx (- (vector:index-unsafe last-idx newcst) 1) newcst)
+                    (RelaxedNode h fss newcst newsts))
+                   ;; The last subtree is now empty: drop it.
+                   ((math:zero? last-idx)
+                    (LeafArray (vector:new)))
+                   (True
+                    (%truncate! newsts last-idx)
+                    (%truncate! newcst last-idx)
+                    (RelaxedNode h fss newcst newsts)))))))))
+
+  (declare %truncate! (vector:Vector :a * UFix -> Void))
+  (define (%truncate! v n)
+    "Remove the elements of `v` from index `n` on. Their slots are cleared, so
+that `v` no longer refers to them, and they can be garbage collected."
+    (lisp (-> Void) (v n)
+      (cl:let ((end (cl:fill-pointer v)))
+        (cl:when (cl:< n end)
+          (cl:fill v cl:nil :start n :end end)
+          (cl:setf (cl:fill-pointer v) n)))
+      (cl:values)))
+
+  (declare %collapse (Seq :a -> Seq :a))
+  (define (%collapse seq)
+    "`seq`, without the nodes with a single subtree at its root."
+    (match seq
+      ((RelaxedNode _ _ _ sts)
+       (if (== 1 (vector:length sts))
+           (%collapse (vector:index-unsafe 0 sts))
+           seq))
+      ((LeafArray _) seq)))
+
+  (declare %subtrees (Seq :a -> vector:Vector (Seq :a)))
+  (define (%subtrees seq)
+    "The subtrees of `seq`, which must be a node. The vector must not be modified."
+    (match seq
+      ((RelaxedNode _ _ _ subs) subs)
+      ((LeafArray _) (unreachable))))
+
+  (declare %subtrees-of-height (UFix * Seq :a -> vector:Vector (Seq :a)))
+  (define (%subtrees-of-height h seq)
+    "Subtrees of height `h` whose concatenation is `seq`, whose height must be
+at most `h + 1`. The vector must not be modified."
+    (let ((sh (height seq)))
+      (cond
+        ((== sh h) (vector:make seq))
+        ((== sh (+ h 1)) (%subtrees seq))
+        ((< sh h) (%subtrees-of-height h (make-relaxed-node (+ sh 1) (vector:make seq))))
+        (True (unreachable)))))
+
+  (declare %from-vector (vector:Vector :a -> Seq :a))
+  (define (%from-vector elements)
+    "A `Seq` of the elements of `elements`, whose leaves are full, except the
+last. `elements` is not modified."
+    (let ((n (vector:length elements))
+          (leaves (vector:with-capacity (math:div (+ n (- max-branching 1)) max-branching))))
+      (for ((start 0 (+ start max-branching)))
+        :while (< start n)
+        (let ((end (min n (+ start max-branching))))
+          (let ((leaf (vector:with-capacity (- end start))))
+            (for ((i start (+ i 1)))
+              :while (< i end)
+              (vector:push! (vector:index-unsafe i elements) leaf)
+              (values))
+            (vector:push! (LeafArray leaf) leaves)
+            (values))))
+      (make-node-from-branches leaves)))
+
+  (declare %leaves (Seq :a -> iter:Iterator (vector:Vector :a)))
+  (define (%leaves seq)
+    "An iterator over the vectors of elements in the leaves of `seq`, in
+order. They must not be modified."
+    (let ((pending (cell:new (make-list seq))))
+      (iter:new
+       (fn ()
+         (rec % ()
+           (match (cell:read pending)
+             ((Nil) None)
+             ((Cons next rest)
+              (match next
+                ((LeafArray v)
+                 (cell:write! pending rest)
+                 (Some v))
+                ((RelaxedNode _ _ _ subs)
+                 (cell:write! pending (foldr Cons rest subs))
+                 (%))))))))))
+
+  (declare %leaves-equal? (Eq :a => iter:Iterator (vector:Vector :a) * iter:Iterator (vector:Vector :a)
+                                      -> Boolean))
+  (define (%leaves-equal? as bs)
+    "Do `as` and `bs`, the leaves of two `Seq`s of the same size, hold equal
+elements?"
+    (rec % ((va (vector:new)) (ia 0) (vb (vector:new)) (ib 0))
+      (cond
+        ((>= ia (vector:length va))
+         (match (iter:next! as)
+           ((Some v) (% v 0 vb ib))
+           ((None) True)))
+        ((>= ib (vector:length vb))
+         (match (iter:next! bs)
+           ((Some v) (% va ia v 0))
+           ((None) False)))
+        ((== (vector:index-unsafe ia va) (vector:index-unsafe ib vb))
+         (% va (+ ia 1) vb (+ ib 1)))
+        (True False))))
+
+  (declare %prefix (Seq :a * UFix -> List :a))
+  (define (%prefix seq n)
+    "The first `n` elements of `seq`, or all of them if there are fewer."
+    (fold (fn (acc x) (Cons x acc))
+          Nil
+          (fold-range (fn (acc x) (Cons x acc)) Nil seq 0 n)))
 
   (declare %push (Seq :a * :a -> (Seq :a) * Boolean))
   (define (%push seq a)
@@ -421,7 +654,7 @@ a new `Seq` instance."
                             (vector:make new-node))
                False))))))))
 
-  (declare group-vectors (types:runtimerepr :a => UFix * vector:Vector :a -> vector:Vector (vector:Vector :a)))
+  (declare group-vectors (UFix * vector:Vector :a -> vector:Vector (vector:Vector :a)))
   (define (group-vectors len vec)
     "Return a vector of vectors of elements from `vec`, each of length `len`
 ecxept for the last one which has a nonzero length less than or equal
@@ -484,17 +717,7 @@ shifts the each member of `target` down by `n` positions.  Mutates both
           (iter:range-increasing n i source-len))
          (values))
        (iter:up-to n))
-      (iter:for-each! (fn (_i) (vector:pop! source) (values)) (iter:up-to n))))
-
-  (define (replace-first v a)
-    (let ((cv (vector:copy v))) 
-      (vector:set! (the UFix 0) a cv)
-      cv))
-
-  (define (replace-last v a)
-    (let ((cv  (vector:copy v))) 
-      (vector:set! (- (vector:length v) (the UFix 1)) a cv)
-      cv))
+      (%truncate! source (- source-len n))))
 
   (declare butfirst (vector:Vector :a -> vector:Vector :a))
   (define (butfirst v)
@@ -502,13 +725,15 @@ shifts the each member of `target` down by `n` positions.  Mutates both
 
   (define (butlast v)
     (let ((cv (vector:copy v)))
-      (vector:pop-unsafe! cv)
+      (%truncate! cv (- (vector:length cv) 1))
       cv))
   
   (define (branch-count seq)
+    ;; Count subtrees rather than entries of the size table, which is
+    ;; stale while rebalancing moves subtrees between nodes.
     (match seq
       ((LeafArray v) (vector:length v))
-      ((RelaxedNode _ _ v _) (vector:length v))))
+      ((RelaxedNode _ _ _ subs) (vector:length subs))))
 
   (define (%shift-n-branches-onto seq1 seq2 n)
         "Moves `n` subbranches from the front of `seq2` to the back of
@@ -534,12 +759,12 @@ invalid because size can no longer be applied correctly."
   (define (make-relaxed-node ht branches)
     (RelaxedNode ht (perfect-subtree-size-at-height ht) (build-cumulative-size-table branches) branches))
   
-  (declare make-node-from-branches (types:runtimerepr :a => vector:Vector (Seq :a) -> Seq :a))
+  (declare make-node-from-branches (vector:Vector (Seq :a) -> Seq :a))
   (define (make-node-from-branches branches)
     "Makes a `Seq` tall enough to contain all the branches. Branches are
 all assumed to have the same height."
     (cond ((vector:empty? branches)
-           (new))
+           (LeafArray (vector:new)))
           ((vector:singleton? branches)
            (vector:pop-unsafe! branches))
           (True 
@@ -560,7 +785,7 @@ all assumed to have the same height."
       ((RelaxedNode ht fss cst seq)
        (RelaxedNode ht fss (vector:copy cst) (vector:copy seq)))))
 
-  (declare rebalance-branches (types:runtimerepr :a => vector:Vector (Seq :a) -> Seq :a))
+  (declare rebalance-branches (vector:Vector (Seq :a) -> Seq :a))
   (define (rebalance-branches branches)
     "Ensures each member of `branches` has between `min-branching` and
 `max-branching` subnodes of their own. Returns a new `Seq` whose branches
@@ -611,37 +836,29 @@ It attempts to rebalance with a minimum of array copying."
 
 (define-expression-macro make (cl:&rest elems)
   "Create a new `Seq` containing `elems`."
-  (cl:let* ((l
-              (cl:length elems))
-            (leaf-arrays
-              (cl:loop :for i :from 0 :to l :by 32
-                       :for i+32 := (cl:+ i 32)
-                       :when (cl:< i+32 l)
-                         :collect (cl:subseq elems i i+32)
-                       :else
-                         :collect (cl:subseq elems i)))
-            (la-count
-              (cl:length leaf-arrays)))
-    (cl:cond
-      ((cl:zerop la-count)
-       '(new))
-      ((cl:= 1 la-count)
-       `(LeafArray (vector:make ,@(cl:car leaf-arrays))))
-      ((cl:<= la-count 32)
-       `(rebuild-size-table
-         (RelaxedNode 2 32 (vector:new) (vector:make ,@(cl:loop :for a :in leaf-arrays
-                                                                :collect `(LeafArray (vector:make ,@a)))))))
-      (cl:t
-       (cl:reduce (cl:lambda (acc la) `(conc ,acc (LeafArray (vector:make ,@la))))
-                  (cl:rest leaf-arrays)
-                  :initial-value `(LeafArray (vector:make ,@(cl:first leaf-arrays))))))))
+  `(%from-vector (vector:make ,@elems)))
 
-;; This method implementation uses :around because sum types implement
-;; cl:print-object for each representation, to avoid a brittle design
-;; by overwriting them manually, the :around method short-circuits them.
+;; This method uses :around because sum types implement cl:print-object
+;; for each representation. The :around method short-circuits them, to
+;; print the elements rather than the tree that holds them.
 (cl:defmethod cl:print-object :around ((self seq) stream)
-  (cl:print-unreadable-object (self stream :type cl:nil)
-    (cl:format stream "SEQ"))
+  (cl:let* ((limit cl:*print-length*)
+            (count (size self))
+            ;; One element more than printed shows that some are elided.
+            (elements (%prefix self (cl:if (cl:and limit (cl:< limit count))
+                                          (cl:1+ limit)
+                                          count))))
+    (cl:print-unreadable-object (self stream :type cl:nil)
+      (cl:write-string "SEQ [" stream)
+      (cl:loop :for element :in elements
+               :for count :from 0
+               :do (cl:unless (cl:zerop count)
+                     (cl:write-char #\Space stream))
+                   (cl:when (cl:and limit (cl:>= count limit))
+                     (cl:write-string "..." stream)
+                     (cl:return))
+                   (cl:prin1 element stream))
+      (cl:write-string "]" stream)))
   self)
 
 #+sb-package-locks

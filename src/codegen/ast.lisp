@@ -98,11 +98,17 @@
    #:node-match-branches                ; READER
    #:catch-branch                       ; STRUCT
    #:make-catch-branch                  ; CONSTRUCTOR
+   #:catch-branch-exception-type        ; READER
    #:catch-branch-pattern               ; READER
    #:catch-branch-body                  ; READER
    #:catch-branch-list                  ; TYPE
+   #:node-protect                       ; STRUCT
+   #:make-node-protect                  ; CONSTRUCTOR
+   #:node-protect-expr                  ; READER
+   #:node-protect-cleanup               ; READER
    #:node-catch                         ; STRUCT
    #:make-node-catch                    ; CONSTRUCTOR
+   #:node-catch-in-place-p              ; READER
    #:node-catch-expr                    ; READER
    #:node-catch-branches                ; READER
    #:resumable-branch                   ; STRUCT
@@ -391,8 +397,11 @@ coalton symbols (`parser:identifier`)"
 
 (defstruct catch-branch
   "A branch of a catch expression."
-  (pattern (util:required 'pattern) :type pattern :read-only t)
-  (body    (util:required 'body)    :type node    :read-only t))
+  ;; EXCEPTION-TYPE is the type caught by a `((the T pat) ...)` branch, or
+  ;; NIL when the branch's pattern determines what it catches.
+  (exception-type (util:required 'exception-type) :type (or null tc:ty) :read-only t)
+  (pattern        (util:required 'pattern)        :type pattern         :read-only t)
+  (body           (util:required 'body)           :type node            :read-only t))
 
 (defmethod make-load-form ((self catch-branch) &optional env)
   (make-load-form-saving-slots self :environment env))
@@ -404,10 +413,19 @@ coalton symbols (`parser:identifier`)"
 (deftype catch-branch-list ()
   '(satisfies catch-branch-list-p))
 
+(defstruct (node-protect (:include node))
+  "Evaluate EXPR, and then CLEANUP however control leaves EXPR."
+  (expr    (util:required 'expr)    :type node :read-only t)
+  (cleanup (util:required 'cleanup) :type node :read-only t))
+
 (defstruct (node-catch (:include node))
-  "An exception-catching construct. Uses CATCH-BRANCH to represent branches"
-  (expr     (util:required 'expr)     :type node              :read-only t)
-  (branches (util:required 'branches) :type catch-branch-list :read-only t))
+  "An exception-catching construct. Uses CATCH-BRANCH to represent branches.
+
+IN-PLACE-P is true for `handle`, whose branches run where the exception was
+thrown, before unwinding. Branches of `catch` run after unwinding."
+  (in-place-p (util:required 'in-place-p) :type boolean           :read-only t)
+  (expr       (util:required 'expr)       :type node              :read-only t)
+  (branches   (util:required 'branches)   :type catch-branch-list :read-only t))
 
 (defstruct resumable-branch
   "A branch of a resumable expression."

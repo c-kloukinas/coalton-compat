@@ -25,9 +25,21 @@
   (alexandria:format-symbol (symbol-package (tc:constructor-entry-classname constructor-entry))
                             "_~D" i))
 
+(defun native-exception-p (def)
+  "Is DEF an exception type represented by an existing Lisp condition type?"
+  (let ((repr (tc:type-definition-explicit-repr def)))
+    (and (tc:type-definition-exception-p def)
+         (consp repr)
+         (eq :native (first repr)))))
+
 (defun codegen-type-definition (def env)
   (append
    (cond
+     ;; The Lisp condition type already exists, and a native exception
+     ;; has no constructors, so there is nothing to define.
+     ((native-exception-p def)
+      nil)
+
      ((tc:type-definition-enum-repr def)
       (loop :for constructor :in (tc:type-definition-constructors def)
             :append
@@ -142,6 +154,20 @@
             (list
              #+sbcl
              `(declaim (sb-ext:freeze-type ,(tc:type-definition-name def))))))))
+
+   ;; Let RESUME-TO find the restart for a resumption whose type is not
+   ;; known statically.
+   (when (tc:type-definition-resumption-p def)
+     (let* ((name (tc:type-definition-name def))
+            (constructor (first (tc:type-definition-constructors def)))
+            (arity (tc:constructor-entry-arity constructor))
+            (resumption (gensym "RESUMPTION")))
+       (list
+        `(defmethod coalton-impl/runtime:invoke-resumption ((,resumption ,name))
+           (declare (ignorable ,resumption))
+           ,(if (zerop arity)
+                `(invoke-restart ',name)
+                `(invoke-restart ',name ,resumption))))))
 
    (loop :for constructor :in (tc:type-definition-constructors def)
          :for name := (tc:constructor-entry-name constructor)

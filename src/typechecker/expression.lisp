@@ -101,11 +101,13 @@
    #:node-match-branches                ; ACCESSOR
    #:node-catch-branch                  ; STRUCT
    #:make-node-catch-branch             ; CONSTRUCTOR
+   #:node-catch-branch-exception-type   ; ACCESSOR
    #:node-catch-branch-pattern          ; ACCESSOR
    #:node-catch-branch-body             ; ACCESSOR
    #:node-catch-branch-list             ; TYPE
    #:node-catch                         ; STRUCT
    #:make-node-catch                    ; CONSTRUCTOR
+   #:node-catch-in-place-p              ; ACCESSOR
    #:node-catch-expr                    ; ACCESSOR
    #:node-catch-branches                ; ACCESSOR
    #:node-resumable-branch              ; STRUCT
@@ -120,6 +122,10 @@
    #:node-progn                         ; STRUCT
    #:make-node-progn                    ; CONSTRUCTOR
    #:node-progn-body                    ; ACCESSOR
+   #:node-protect                       ; STRUCT
+   #:make-node-protect                  ; CONSTRUCTOR
+   #:node-protect-expr                  ; ACCESSOR
+   #:node-protect-cleanup               ; ACCESSOR
    #:node-unsafe                        ; STRUCT
    #:make-node-unsafe                   ; CONSTRUCTOR
    #:node-unsafe-body                   ; ACCESSOR
@@ -414,6 +420,12 @@
             (:copier nil))
   (body (util:required 'body) :type node-body :read-only t))
 
+(defstruct (node-protect
+            (:include node)
+            (:copier nil))
+  (expr    (util:required 'expr)    :type node      :read-only t)
+  (cleanup (util:required 'cleanup) :type node-body :read-only t))
+
 ;; node-the does not exist in this AST!
 
 (defstruct (node-block
@@ -472,9 +484,12 @@
 
 (defstruct (node-catch-branch
             (:copier nil))
-  (pattern  (util:required 'pattern)  :type pattern         :read-only t)
-  (body     (util:required 'body)     :type node-body       :read-only t)
-  (location (util:required 'location) :type source:location :read-only t))
+  ;; EXCEPTION-TYPE is the exception type caught by a branch written
+  ;; `((the T pat) ...)`, or NIL for constructor and wildcard branches.
+  (exception-type (util:required 'exception-type) :type (or null tc:ty) :read-only t)
+  (pattern        (util:required 'pattern)        :type pattern         :read-only t)
+  (body           (util:required 'body)           :type node-body       :read-only t)
+  (location       (util:required 'location)       :type source:location :read-only t))
 
 (defmethod source:location ((self node-catch-branch))
   (node-catch-branch-location self))
@@ -489,8 +504,11 @@
 (defstruct (node-catch
             (:include node)
             (:copier nil))
-  (expr     (util:required 'expr)         :type node                   :read-only t)
-  (branches (util:required 'branches)     :type node-catch-branch-list :read-only t))
+  ;; IN-PLACE-P is true for `handle`, whose branches run where the
+  ;; exception was thrown, before unwinding. `catch` unwinds first.
+  (in-place-p (util:required 'in-place-p) :type boolean                :read-only t)
+  (expr       (util:required 'expr)       :type node                   :read-only t)
+  (branches   (util:required 'branches)   :type node-catch-branch-list :read-only t))
 
 (defstruct (node-application
             (:include node)
@@ -754,6 +772,7 @@
   (declare (type tc:substitution-list subs)
            (values node-catch-branch))
   (make-node-catch-branch
+   :exception-type (node-catch-branch-exception-type node)
    :pattern (tc:apply-substitution subs (node-catch-branch-pattern node))
    :body (tc:apply-substitution subs (node-catch-branch-body node))
    :location (source:location node)))
@@ -764,6 +783,7 @@
   (make-node-catch
    :type (tc:apply-substitution subs (node-type node))
    :location (source:location node)
+   :in-place-p (node-catch-in-place-p node)
    :expr (tc:apply-substitution subs (node-catch-expr node))
    :branches (tc:apply-substitution subs (node-catch-branches node))))
 
@@ -799,6 +819,15 @@
    :type (tc:apply-substitution subs (node-type node))
    :location (source:location node)
    :body (tc:apply-substitution subs (node-unsafe-body node))))
+
+(defmethod tc:apply-substitution (subs (node node-protect))
+  (declare (type tc:substitution-list subs)
+           (values node-protect))
+  (make-node-protect
+   :type (tc:apply-substitution subs (node-type node))
+   :location (source:location node)
+   :expr (tc:apply-substitution subs (node-protect-expr node))
+   :cleanup (tc:apply-substitution subs (node-protect-cleanup node))))
 
 (defmethod tc:apply-substitution (subs (node node-block))
   (declare (type tc:substitution-list subs)

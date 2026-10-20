@@ -214,3 +214,165 @@ error: Context conflicts with functional dependencies
    |
  8 |  (declare f ((C :a String) (D :a Integer) => :a))
    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the predicates C :A String and C :A Integer conflict with functional dependencies
+
+================================================================================
+111 Instance conflicts with its own context
+================================================================================
+
+(package coalton-unit-test/fundeps)
+
+(define-class (C :a :b (:a -> :b)))
+
+(define-instance (C :a :b => C :a (List :b)))
+
+--------------------------------------------------------------------------------
+
+error: Instance fundep conflict
+  --> test:5:17
+   |
+ 5 |  (define-instance (C :a :b => C :a (List :b)))
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^ instance requires C :A :B, which conflicts with C :A (List :B) under functional dependencies
+
+================================================================================
+112 Instance context conflicts with functional dependencies
+================================================================================
+
+(package coalton-unit-test/fundeps)
+
+(define-class (C :a :b (:a -> :b)))
+
+(define-class (D :a))
+
+(define-instance ((C :a String) (C :a Integer) => D :a))
+
+--------------------------------------------------------------------------------
+
+error: Instance fundep conflict
+  --> test:7:17
+   |
+ 7 |  (define-instance ((C :a String) (C :a Integer) => D :a))
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ instance requires C :A Integer, which conflicts with C :A String under functional dependencies
+
+================================================================================
+113 Fundep improvement of a declared context does not terminate
+================================================================================
+
+(package coalton-unit-test/fundeps)
+
+(define-class (C :a :b (:a -> :b)))
+
+(define-instance (C (List :a) :b => C :a (List :b)))
+
+(declare f (C :a :b => :a -> Unit))
+(define (f _) Unit)
+
+--------------------------------------------------------------------------------
+
+error: Functional dependency improvement does not terminate
+  --> test:7:11
+   |
+ 7 |  (declare f (C :a :b => :a -> Unit))
+   |             ^^^^^^^^^^^^^^^^^^^^^^^ improving C :A :B with functional dependencies does not reach a fixed point
+
+================================================================================
+114 Fundep improvement of an inferred predicate does not terminate
+================================================================================
+
+(package coalton-unit-test/fundeps)
+
+(define-type (Vec :a) (Vec :a))
+
+(define-class (Mul :a :b :c (:a :b -> :c))
+  (mul (:a * :b -> :c)))
+
+(define-instance (Mul :a :b :c => Mul :a (Vec :b) (Vec :c))
+  (define (mul a (Vec b))
+    (Vec (mul a b))))
+
+(define (f b x y)
+  (if b (mul x (Vec y)) y))
+
+--------------------------------------------------------------------------------
+
+error: Functional dependency improvement does not terminate
+  --> test:13:9
+    |
+ 13 |    (if b (mul x (Vec y)) y))
+    |           ^^^ improving Mul :A (Vec :C) :C with functional dependencies does not reach a fixed point
+
+================================================================================
+115 Fundep improvement determines dependents through an instance context once
+================================================================================
+
+(package coalton-unit-test/fundeps)
+
+(define-class (C :a :b :c (:a -> :b))
+  (cm (:a * :c -> :b)))
+
+(define-class (D :a :x (:a -> :x)))
+
+(define-instance (D Integer String))
+
+(define-instance (D :a :x => C :a (List :x) Boolean)
+  (define (cm _ _) Nil))
+
+(define (f) (cm (the Integer 1) #\c))
+
+(declare g (Void -> List String))
+(define (g) (f))
+
+--------------------------------------------------------------------------------
+
+error: Unknown instance
+  --> test:16:13
+    |
+ 16 |  (define (g) (f))
+    |               ^ Unknown instance C Integer (List String) Char
+
+================================================================================
+116 Inferred predicates conflict with functional dependencies
+================================================================================
+
+(package coalton-unit-test/fundeps)
+
+(define-class (C :a :b (:a -> :b))
+  (cm (:a -> :b)))
+
+(declare g (String * Integer -> Unit))
+(define (g _ _) Unit)
+
+(define (f x)
+  (g (cm x) (cm x)))
+
+--------------------------------------------------------------------------------
+
+error: Context conflicts with functional dependencies
+  --> test:10:13
+    |
+ 10 |    (g (cm x) (cm x)))
+    |               ^^ the predicates C :A String and C :A Integer conflict with functional dependencies
+
+================================================================================
+117 Inferred predicates conflict through a superclass
+================================================================================
+
+(package coalton-unit-test/fundeps)
+
+(define-class (C :a :b (:a -> :b)))
+
+(define-class (C :a :b => D :a :b)
+  (dm (:a -> :b)))
+
+(declare g (String * Integer -> Unit))
+(define (g _ _) Unit)
+
+(define (f x)
+  (g (dm x) (dm x)))
+
+--------------------------------------------------------------------------------
+
+error: Context conflicts with functional dependencies
+  --> test:12:13
+    |
+ 12 |    (g (dm x) (dm x)))
+    |               ^^ the predicates C :A String and C :A Integer conflict with functional dependencies
