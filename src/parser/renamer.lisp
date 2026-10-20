@@ -478,6 +478,7 @@
 
       (values
        (make-node-catch-branch
+        :exception-type (node-catch-branch-exception-type node)
         :pattern (rename-variables-generic% (node-catch-branch-pattern node) new-ctx)
         :body (rename-variables-generic% (node-catch-branch-body node) new-ctx)
         :location (source:location node))
@@ -489,6 +490,7 @@
 
     (values
      (make-node-catch
+      :in-place-p (node-catch-in-place-p node)
       :expr (rename-variables-generic% (node-catch-expr node) ctx)
       :branches (rename-variables-generic% (node-catch-branches node) ctx)
       :location (source:location node))
@@ -521,6 +523,17 @@
     (values
      (make-node-unsafe
       :body (rename-variables-generic% (node-unsafe-body node) ctx)
+      :location (source:location node))
+     ctx))
+
+  (:method ((node node-protect) ctx)
+    (declare (type algo:immutable-map ctx)
+             (values node algo:immutable-map))
+
+    (values
+     (make-node-protect
+      :expr (rename-variables-generic% (node-protect-expr node) ctx)
+      :cleanup (rename-variables-generic% (node-protect-cleanup node) ctx)
       :location (source:location node))
      ctx))
 

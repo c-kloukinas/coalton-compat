@@ -349,6 +349,24 @@ This is conservative and intentionally aligns with mutable native wrappers."
            (type tc:environment env)
            (values tc:environment))
 
+  ;; Redefining a type does not remove its instances, and THROW and
+  ;; RESUME-TO rely on every instance of Exception and Resumption being an
+  ;; exception or resumption type.
+  (let ((old-type (tc:lookup-type env (type-definition-name type) :no-error t)))
+    (when old-type
+      (when (and (tc:type-entry-exception-p old-type)
+                 (not (type-definition-exception-p type)))
+        (tc-error "Invalid redefinition"
+                  (tc-note parsed-type
+                           "exception type ~A cannot be redefined as a type that is not an exception"
+                           (type-definition-name type))))
+      (when (and (tc:type-entry-resumption-p old-type)
+                 (not (type-definition-resumption-p type)))
+        (tc-error "Invalid redefinition"
+                  (tc-note parsed-type
+                           "resumption type ~A cannot be redefined as a type that is not a resumption"
+                           (type-definition-name type))))))
+
   ;; If the type was previously defined, then undefine all
   ;; constructors that were defined only on the old version of the
   ;; type.
@@ -481,6 +499,30 @@ This is conservative and intentionally aligns with mutable native wrappers."
                  (setf env (tc:unset-function env ctor-name)))))
 
   env)
+
+(defun check-native-exception-repr (lisp-type repr)
+  "Ensure LISP-TYPE, the repr of a native exception, is a known subtype of
+CL:SERIOUS-CONDITION. REPR is the attribute used to report errors.
+
+Catching an exception transfers control out of the signaling code, which is
+the protocol of serious conditions. Other conditions, such as warnings, are
+signaled with the expectation that they may be ignored."
+  (declare (type parser:attribute-repr repr))
+  (multiple-value-bind (subtype-p known-p)
+      (handler-case (subtypep lisp-type 'serious-condition)
+        (error () (values nil nil)))
+    (unless subtype-p
+      (let ((printed-type (let ((*package* (find-package "KEYWORD")))
+                            (prin1-to-string lisp-type))))
+        (if known-p
+            (tc-error "Invalid repr :native attribute"
+                      (tc-note repr "native exceptions must be serious conditions, but ~A is not a subtype of COMMON-LISP:SERIOUS-CONDITION"
+                               printed-type))
+            ;; Some Lisps, such as CCL, define a condition type at
+            ;; compile time only when told to with EVAL-WHEN.
+            (tc-error "Invalid repr :native attribute"
+                      (tc-note repr "~A is not a known Lisp condition type at compile time; a condition defined in the same file must be wrapped in (EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL :EXECUTE) ...)"
+                               printed-type)))))))
 
 (defun infer-define-type-scc-kinds (types env)
   (declare (type parser:type-definition-list types)
@@ -646,6 +688,11 @@ This is conservative and intentionally aligns with mutable native wrappers."
                  (tc-error "Invalid repr :transparent attribute"
                            (tc-note (first (parser:type-definition-ctors type))
                                     "constructors of repr :transparent types must have a single field")))
+
+         ;; Check that a native exception is represented by a Lisp condition type
+         :when (and (eq repr-type :native)
+                    (parser:type-definition-exception-p type))
+           :do (check-native-exception-repr repr-arg repr)
          :collect
          (let*
              ((ctors
@@ -716,8 +763,29 @@ This is conservative and intentionally aligns with mutable native wrappers."
   (declare (type type-definition type)
            (type partial-type-env env)
            (values parser:toplevel-define-instance-list))
-  (declare (ignore env))
-  (maybe-runtime-repr-instance type))
+  ;; The RuntimeRepr instance precedes the Exception and Resumption
+  ;; instances, which require it as a superclass instance.
+  (append (maybe-runtime-repr-instance type)
+          (and (type-definition-exception-p type)
+               (maybe-marker-instance type (exception-class-name) env))
+          (and (type-definition-resumption-p type)
+               (maybe-marker-instance type (resumption-class-name) env))))
+
+(defun maybe-marker-instance (type class env)
+  "Return a generated instance of CLASS, a class without methods, for TYPE if
+CLASS is defined. This is how the only instances of `Exception` and
+`Resumption` are created."
+  (declare (type type-definition type)
+           (type symbol class)
+           (type partial-type-env env)
+           (values parser:toplevel-define-instance-list &optional))
+  (when (and class
+             (tc:lookup-class (partial-type-env-env env) class :no-error t))
+    (list (generated-instance-definition
+           type
+           class
+           nil
+           :ty (generated-instance-applied-type type nil)))))
 
 (defun maybe-runtime-repr-instance (type)
   (declare (type type-definition type))

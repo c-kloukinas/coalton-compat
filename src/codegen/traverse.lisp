@@ -161,13 +161,20 @@ nodes."
                                   (match-branch-body branch)
                                   args)))
                   (node-match-branches node))))
+    (action (:traverse node-protect node &rest args)
+      (make-node-protect
+       :type (node-type node)
+       :expr (apply *traverse* (node-protect-expr node) args)
+       :cleanup (apply *traverse* (node-protect-cleanup node) args)))
     (action (:traverse node-catch node &rest args)
       (make-node-catch
        :type (node-type node)
+       :in-place-p (node-catch-in-place-p node)
        :expr (apply *traverse* (node-catch-expr node) args)
        :branches (mapcar
                   (lambda (branch)
                     (make-catch-branch
+                     :exception-type (catch-branch-exception-type branch)
                      :pattern (map-pattern (catch-branch-pattern branch)
                                            :test-function (lambda (test) (apply *traverse* test args)))
                      :body (apply *traverse*

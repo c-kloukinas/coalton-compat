@@ -20,8 +20,8 @@
 (defun %make-inet-socket ()
   "Create a new TCP/IPv4 socket."
   (make-instance 'sb-bsd-sockets:inet-socket
-                 :type :stream
-                 :protocol :tcp))
+                 :type ':stream
+                 :protocol ':tcp))
 
 (defun %loopback-address ()
   "Return the 127.0.0.1 address as a vector."
@@ -59,7 +59,7 @@ Returns a bivalent (input + output) stream for the accepted connection."
      :element-type '(unsigned-byte 8)
      :input t
      :output t
-     :buffering :full)))
+     :buffering ':full)))
 
 (defun socket-connect (port)
   "Connect to 127.0.0.1:PORT.
@@ -74,7 +74,7 @@ Returns a bivalent stream for the connection."
            :element-type '(unsigned-byte 8)
            :input t
            :output t
-           :buffering :full))
+           :buffering ':full))
       (error (c)
         (ignore-errors (sb-bsd-sockets:socket-close sock))
         (error 'socket-error
@@ -83,17 +83,21 @@ Returns a bivalent stream for the connection."
 (defun socket-write-string (stream string)
   "Write STRING to STREAM as UTF-8 encoded bytes."
   (declare (type string string))
-  (let ((octets (sb-ext:string-to-octets string :external-format :utf-8)))
+  (let ((octets (sb-ext:string-to-octets string :external-format ':utf-8)))
     (write-sequence octets stream)
     (force-output stream))
   (values))
 
 (defun socket-close (socket-or-stream)
   "Close SOCKET-OR-STREAM.
-Works for both raw sb-bsd-sockets:socket objects and CL streams."
+Works for both raw sb-bsd-sockets:socket objects and CL streams.  A raw
+socket is shut down first: on Linux, closing a listening socket does not
+wake a thread blocked accepting on it, but shutting it down does."
   (ignore-errors
     (etypecase socket-or-stream
       (sb-bsd-sockets:socket
+       (ignore-errors
+         (sb-bsd-sockets:socket-shutdown socket-or-stream :direction ':io))
        (sb-bsd-sockets:socket-close socket-or-stream))
       (stream
        (close socket-or-stream))))

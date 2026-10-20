@@ -93,6 +93,8 @@
    #:resume-to
    #:resumable
    #:catch
+   #:handle
+   #:protect
    #:dynamic-bind
    #:let
    #:let*
@@ -121,6 +123,7 @@
    #:as
    #:try-as
    #:unwrap-as
+   #:need
    #:nest
    #:pipe
    #:.<

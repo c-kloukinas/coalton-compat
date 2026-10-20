@@ -24,29 +24,14 @@
 
 (defun run-mine-tests-in-subprocess ()
   (let* ((mine-dir (asdf:system-source-directory "mine-tests"))
-         (repo-root (truename (merge-pathnames "../" mine-dir)))
-         (config-path (merge-pathnames "coalton-config.lisp" mine-dir))
-         (quicklisp-setup (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
-         (cache-dir (merge-pathnames "mine-tests-cache/" (uiop:temporary-directory)))
-         (init-registry
-           (format nil
-                   "(asdf:initialize-source-registry '(:source-registry (:tree #P~S) :ignore-inherited-configuration))"
-                   (namestring repo-root)))
          (command
-           (list "env"
-                 (format nil "XDG_CACHE_HOME=~A" (namestring cache-dir))
-                 "sbcl"
+           (list (or (uiop:getenv "SBCL_BIN") "sbcl")
+                 "--dynamic-space-size" "4096"
                  "--noinform"
                  "--no-userinit"
                  "--no-sysinit"
                  "--non-interactive"
-                 "--load" (namestring quicklisp-setup)
-                 "--eval" "(pushnew :coalton-portable-bigfloat *features*)"
-                 "--load" (namestring config-path)
-                 "--eval" init-registry
-                 "--eval" "(asdf:load-system \"mine-tests\")"
-                 "--eval" "(unless (mine-tests:run-mine-tests) (uiop:quit 1))")))
-    (ensure-directories-exist cache-dir)
+                 "--load" (namestring (merge-pathnames "tests/run.lisp" mine-dir)))))
     (multiple-value-bind (_output _error-output exit-code)
         (uiop:run-program command
                           :output *standard-output*
@@ -85,6 +70,8 @@
                   check-indent-plain-text-mode-never-indents
                   check-indent-runtime-rules-resolve-shadowed-cl-symbols
                   check-indent-runtime-rules-use-cl-user-for-lisp-default
+                  check-indent-runtime-rules-fall-back-until-package-exists
+                  check-indent-newline-before-project-package-exists
                   check-indent-newline-before-close-paren-uses-blank-context
                   check-editor-nonprinting-character-widths
                   check-crlf-line-text-and-editor-unit-boundaries
@@ -130,7 +117,56 @@
                   check-create-project-creates-new-project
                   check-create-project-refuses-existing-directory
                   check-create-project-rejects-path-like-name
-                  check-buffer-manager-any-dirty-sees-non-current-buffer))
+                  check-project-tree-shows-hidden-rows-after-growing
+                  check-project-tree-uses-the-opened-asd-file
+                  check-project-tree-loads-defsystem-dependencies-once
+                  check-project-tree-lists-the-asd-file-first
+                  check-project-tree-reads-asd-files-as-asdf-does
+                  check-buffer-manager-any-dirty-sees-non-current-buffer
+                  run-runtime-regression-tests
+                  run-quick-result-model-tests
+                  run-diagnostic-store-tests
+                  run-diagnostic-adapter-tests
+                  run-diagnostic-cleanup-tests
+                  run-editor-regression-tests
+                  run-editor-layout-tests
+                  run-editor-render-context-tests
+                  run-editor-geometry-integration-tests
+                  run-editor-wrapped-viewport-tests
+                  run-source-context-tests
+                  run-lexer-context-tests
+                  run-paredit-context-tests
+                  run-indent-context-tests
+                  run-completion-context-tests
+                  run-app-regression-tests
+                  run-workflow-tests
+                  run-app-workflow-extra-tests
+                  run-app-runtime-session-tests
+                  run-app-source-service-tests))
     (format t "~&~A~%" test)
     (funcall test))
   t)
+
+(defun run-source-context-tests ()
+  (uiop:symbol-call ':mine-tests/source-context ':run-source-context-tests))
+
+(defun run-indent-context-tests ()
+  (uiop:symbol-call ':mine-tests/indent-context ':run-indent-context-tests))
+
+(defun run-completion-context-tests ()
+  (uiop:symbol-call ':mine-tests/completion-context ':run-completion-context-tests))
+
+(defun run-lexer-context-tests ()
+  (uiop:symbol-call ':mine-tests/lexer-context ':run-lexer-context-tests))
+
+(defun run-paredit-context-tests ()
+  (uiop:symbol-call ':mine-tests/paredit-context ':run-paredit-context-tests))
+
+(defun run-diagnostic-store-tests ()
+  (uiop:symbol-call ':mine-tests/diagnostic-store ':run-diagnostic-store-tests))
+
+(defun run-diagnostic-adapter-tests ()
+  (uiop:symbol-call ':mine-tests/diagnostic-adapter ':run-diagnostic-adapter-tests))
+
+(defun run-diagnostic-cleanup-tests ()
+  (uiop:symbol-call ':mine-tests/diagnostic-adapter ':run-diagnostic-cleanup-tests))

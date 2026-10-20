@@ -298,10 +298,12 @@ FORM must be a renamed parser AST fragment."
 
            (parser:node-catch
             (parser:make-node-catch
+             :in-place-p (parser:node-catch-in-place-p node)
              :expr (resolve-node (parser:node-catch-expr node) ctx)
              :branches
              (mapcar (lambda (branch)
                        (parser:make-node-catch-branch
+                        :exception-type (parser:node-catch-branch-exception-type branch)
                         :pattern (parser:node-catch-branch-pattern branch)
                         :body (resolve-body (parser:node-catch-branch-body branch) ctx)
                         :location (source:location branch)))
@@ -328,6 +330,12 @@ FORM must be a renamed parser AST fragment."
            (parser:node-unsafe
             (parser:make-node-unsafe
              :body (resolve-body (parser:node-unsafe-body node) ctx)
+             :location (source:location node)))
+
+           (parser:node-protect
+            (parser:make-node-protect
+             :expr (resolve-node (parser:node-protect-expr node) ctx)
+             :cleanup (resolve-body (parser:node-protect-cleanup node) ctx)
              :location (source:location node)))
 
            (parser:node-the

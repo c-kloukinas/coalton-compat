@@ -40,6 +40,7 @@
    #:infer-expl-binging-type            ; FUNCTION
    #:check-bindings-for-invalid-recursion ; FUNCTION
    #:attach-explicit-binding-type       ; FUNCTION
+   #:with-fundep-errors                 ; MACRO
    ))
 
 (in-package #:coalton-impl/typechecker/define)
@@ -118,6 +119,46 @@
   (tc-error "Unknown instance"
             (tc-note pred "Unknown instance ~A"
                      (type-object-string pred))))
+
+(defun error-fundep-nontermination (condition location env)
+  "Report CONDITION at its first predicate with source information, or at LOCATION."
+  (declare (type tc:fundep-nontermination condition)
+           (type source:location location))
+  (let* ((preds (tc:fundep-nontermination-preds condition))
+         (located-pred (find-if #'source:location preds)))
+    (tc-error "Functional dependency improvement does not terminate"
+              (tc-location (if located-pred
+                               (source:location located-pred)
+                               location)
+                           "improving ~{~A~^, ~} with functional dependencies does not reach a fixed point"
+                           (mapcar (lambda (pred)
+                                     (type-object-string pred env))
+                                   preds)))))
+
+(defun error-context-fundep-conflict (condition location env)
+  "Report CONDITION at one of its predicates with source information, or at LOCATION."
+  (declare (type tc:context-fundep-conflict condition)
+           (type source:location location))
+  (let* ((first-pred (tc:context-fundep-conflict-first-pred condition))
+         (second-pred (tc:context-fundep-conflict-second-pred condition))
+         (located-pred (find-if #'source:location (list second-pred first-pred))))
+    (tc-error "Context conflicts with functional dependencies"
+              (tc-location (if located-pred
+                               (source:location located-pred)
+                               location)
+                           "the predicates ~A and ~A conflict with functional dependencies"
+                           (type-object-string first-pred env)
+                           (type-object-string second-pred env)))))
+
+(defmacro with-fundep-errors ((location env) &body body)
+  "Report errors from solving functional dependencies in BODY as type errors
+at LOCATION, unless the predicates involved have their own locations."
+  (let ((condition (gensym "CONDITION")))
+    `(handler-case (progn ,@body)
+       (tc:fundep-nontermination (,condition)
+         (error-fundep-nontermination ,condition ,location ,env))
+       (tc:context-fundep-conflict (,condition)
+         (error-context-fundep-conflict ,condition ,location ,env)))))
 
 (defun standard-expression-type-mismatch-error (node subs expected-type ty)
   "Utility for signalling a type-mismatch error in INFER-EXPRESSION-TYPE"
@@ -1079,6 +1120,26 @@ Returns four values:
                          (entry   (tc:lookup-type (tc-env-env env) ty-name)))
     (tc:type-entry-resumption-p entry)))
 
+(defun parse-catch-exception-type (type name env)
+  "Parse TYPE, the type in a `((the TYPE pat) ...)` branch of a `catch` or
+`handle` expression, and ensure that it denotes an exception type. NAME is
+the operator of the expression, used in error messages."
+  (declare (type parser:ty type)
+           (type string name)
+           (type tc-env env)
+           (values tc:ty &optional))
+  ;; Exception types have no parameters, and a handler cannot test type
+  ;; arguments at runtime, so the caught type must be fully known.
+  (when (parser:collect-type-variables type)
+    (tc-error (format nil "Invalid ~A type" name)
+              (tc-note type "the caught type cannot contain type variables")))
+  (let ((ty (parse-type type (tc-env-parser-env env))))
+    (unless (exception-type-p ty env)
+      (tc-error (format nil "Invalid ~A type" name)
+                (tc-note type "type '~A' is not an exception type"
+                         (type-object-string ty env))))
+    ty))
+
 (defun node-output-arity (node)
   (declare (type t node)
            (values fixnum &optional))
@@ -1096,29 +1157,32 @@ Returns four values:
            (type tc:substitution-list subs)
            (type tc-env env)
            (values tc:ty-scheme tc:substitution-list &optional))
-  (multiple-value-bind (ty preds accessors _ subs)
-      (infer-expression-type node
-                             (tc:make-variable :kind tc:+kstar+ :allow-result-p t)
-                             subs
-                             env)
-    (declare (ignore _))
-    (multiple-value-bind (preds subs)
-        (tc:solve-fundeps (tc-env-env env) preds subs)
-      (setf accessors (tc:apply-substitution subs accessors))
-      (multiple-value-bind (accessors subs_)
-          (solve-accessors accessors (tc-env-env env))
-        (setf subs (tc:compose-substitution-lists subs subs_))
-        (when accessors
-          (tc:tc-error "Ambiguous accessor"
-                       (source:note (first accessors)
-                                    "accessor is ambiguous")))
-        (let* ((preds (tc:reduce-context (tc-env-env env) preds subs))
-               (ty (tc:apply-substitution subs ty))
-               (qual-ty (tc:qualify preds ty)))
-          (values
-           (tc:remove-source-info
-            (tc:quantify (tc:type-variables qual-ty) qual-ty))
-           subs))))))
+  ;; TYPE-OF reports internal type errors from inferring its expression as
+  ;; type mismatches, so report errors from functional dependencies here.
+  (with-fundep-errors ((source:location node) env)
+    (multiple-value-bind (ty preds accessors _ subs)
+        (infer-expression-type node
+                               (tc:make-variable :kind tc:+kstar+ :allow-result-p t)
+                               subs
+                               env)
+      (declare (ignore _))
+      (multiple-value-bind (preds subs)
+          (tc:solve-fundeps (tc-env-env env) preds subs)
+        (setf accessors (tc:apply-substitution subs accessors))
+        (multiple-value-bind (accessors subs_)
+            (solve-accessors accessors (tc-env-env env))
+          (setf subs (tc:compose-substitution-lists subs subs_))
+          (when accessors
+            (tc:tc-error "Ambiguous accessor"
+                         (source:note (first accessors)
+                                      "accessor is ambiguous")))
+          (let* ((preds (tc:reduce-context (tc-env-env env) preds subs))
+                 (ty (tc:apply-substitution subs ty))
+                 (qual-ty (tc:qualify preds ty)))
+            (values
+             (tc:remove-source-info
+              (tc:quantify (tc:type-variables qual-ty) qual-ty))
+             subs)))))))
 
 (defun rec-node-bindings-independent-p (node)
   "Return true when REC's synthetic outer init bindings do not depend on each
@@ -1308,9 +1372,13 @@ other, so they can be inferred monomorphically before the recursive body."
                         :when bad :return bad)))
 
              (parser:node-catch
-              (or (check-node (parser:node-catch-expr node) tailp)
+              ;; The guarded expression runs inside the handlers, and the
+              ;; branches of `handle` run before unwinding, so neither is a
+              ;; tail position. `catch` branches run after unwinding.
+              (or (check-node (parser:node-catch-expr node) nil)
                   (loop :for branch :in (parser:node-catch-branches node)
-                        :for bad := (check-body (parser:node-catch-branch-body branch) tailp)
+                        :for bad := (check-body (parser:node-catch-branch-body branch)
+                                                (and tailp (not (parser:node-catch-in-place-p node))))
                         :when bad :return bad)))
 
              (parser:node-resumable
@@ -1324,6 +1392,11 @@ other, so they can be inferred monomorphically before the recursive body."
 
              (parser:node-unsafe
               (check-body (parser:node-unsafe-body node) tailp))
+
+             ;; Both run inside the UNWIND-PROTECT.
+             (parser:node-protect
+              (or (check-node (parser:node-protect-expr node) nil)
+                  (check-body (parser:node-protect-cleanup node) nil)))
 
              (parser:node-the
               (check-node (parser:node-the-expr node) tailp))
@@ -2473,10 +2546,11 @@ Returns (VALUES INFERRED-TYPE PREDICATES NODE SUBSTITUTIONS)")
              (type tc:substitution-list subs)
              (type tc-env env)
              (values tc:ty tc:ty-predicate-list accessor-list node-catch tc:substitution-list &optional))
-    (let ((ret-ty (tc:make-variable :kind tc:+kstar+ :allow-result-p t)))
-      ;; On the non-throwing path, CATCH returns its guarded expression
-      ;; directly, so the guarded expression and each branch share the same
-      ;; result type.
+    (let ((ret-ty (tc:make-variable :kind tc:+kstar+ :allow-result-p t))
+          (name (parser:node-catch-operator-name node)))
+      ;; On the non-throwing path, CATCH and HANDLE return their guarded
+      ;; expression directly, so the guarded expression and each branch
+      ;; share the same result type.
       (multiple-value-bind (expr-ty preds accessors expr-node subs)
           (infer-expression-type (parser:node-catch-expr node)
                                  ret-ty
@@ -2484,20 +2558,33 @@ Returns (VALUES INFERRED-TYPE PREDICATES NODE SUBSTITUTIONS)")
                                  env)
         (declare (ignore expr-ty))
 
-        (let* (;; Infer type of each pattern, ensuring it is an exception type
+        (let* (;; Parse the exception type of each `(the T pat)` branch.
+               (exception-types
+                 (loop
+                   :for branch :in (parser:node-catch-branches node)
+                   :for type := (parser:node-catch-branch-exception-type branch)
+                   :collect (and type (parse-catch-exception-type type name env))))
+               ;; Infer type of each pattern, ensuring it is an exception type
                (branch-pat-nodes
                  (loop
                    :for branch :in (parser:node-catch-branches node)
+                   :for exception-type :in exception-types
                    :for pattern := (parser:node-catch-branch-pattern branch)
                    :for (pat-ty pat-node subs_)
-                     := (multiple-value-list (infer-pattern-type pattern (tc:make-variable) subs env))
-                   :unless (or (exception-type-p pat-ty env)
+                     := (multiple-value-list
+                         (infer-pattern-type pattern
+                                             (or exception-type (tc:make-variable))
+                                             subs
+                                             env))
+                   :unless (or exception-type
+                               (exception-type-p pat-ty env)
                                (typep pattern 'parser:pattern-wildcard))
                      :do (tc-error
-                          "Invalid catch case"
+                          (format nil "Invalid ~A case" name)
                           (tc-note
                            pat-node
-                           "Catch branch pattern must be an exception constructor pattern or a wildcard."))
+                           "~@(~A~) branch pattern must be an exception constructor pattern or a wildcard."
+                           name))
                    :else
                      :do (setf subs subs_)
                          (setf preds (append preds (pattern-predicates pat-node)))
@@ -2520,9 +2607,11 @@ Returns (VALUES INFERRED-TYPE PREDICATES NODE SUBSTITUTIONS)")
                (branch-nodes
                  (loop
                    :for branch :in (parser:node-catch-branches node)
+                   :for exception-type :in exception-types
                    :for pat-node :in branch-pat-nodes
                    :for branch-body-node :in branch-body-nodes
                    :collect (make-node-catch-branch
+                             :exception-type exception-type
                              :pattern pat-node
                              :body branch-body-node
                              :location (source:location branch)))))
@@ -2537,6 +2626,7 @@ Returns (VALUES INFERRED-TYPE PREDICATES NODE SUBSTITUTIONS)")
                    (make-node-catch
                     :type (tc:qualify nil type)
                     :location (source:location node)
+                    :in-place-p (parser:node-catch-in-place-p node)
                     :expr expr-node
                     :branches branch-nodes)
                    subs)))
@@ -2674,6 +2764,41 @@ Returns (VALUES INFERRED-TYPE PREDICATES NODE SUBSTITUTIONS)")
         :location (source:location node)
        :body body-node)
        subs)))
+
+  (:method ((node parser:node-protect) expected-type subs env)
+    (declare (type tc:ty expected-type)
+             (type tc:substitution-list subs)
+             (type tc-env env)
+             (values tc:ty tc:ty-predicate-list accessor-list node-protect tc:substitution-list &optional))
+
+    ;; PROTECT returns the values of its protected expression, which may be
+    ;; Void or multiple values, and discards those of its cleanup forms.
+    (let ((ret-ty (tc:make-variable :kind tc:+kstar+ :allow-result-p t)))
+      (multiple-value-bind (expr-ty preds accessors expr-node subs)
+          (infer-expression-type (parser:node-protect-expr node) ret-ty subs env)
+        (declare (ignore expr-ty))
+        (multiple-value-bind (cleanup-ty cleanup-preds cleanup-accessors cleanup-node subs)
+            (infer-expression-type (parser:node-protect-cleanup node)
+                                   (tc:make-variable :kind tc:+kstar+ :allow-result-p t)
+                                   subs
+                                   env)
+          (declare (ignore cleanup-ty))
+          (handler-case
+              (progn
+                (setf subs (tc:unify subs ret-ty expected-type))
+                (let ((type (tc:apply-substitution subs ret-ty)))
+                  (values
+                   type
+                   (append preds cleanup-preds)
+                   (append accessors cleanup-accessors)
+                   (make-node-protect
+                    :type (tc:qualify nil type)
+                    :location (source:location node)
+                    :expr expr-node
+                    :cleanup cleanup-node)
+                   subs)))
+            (tc:coalton-internal-type-error ()
+              (standard-expression-type-mismatch-error node subs expected-type ret-ty)))))))
 
   (:method ((node parser:node-block) expected-type subs env)
     (declare (type tc:ty expected-type)
@@ -2881,16 +3006,36 @@ Returns (VALUES INFERRED-TYPE PREDICATES NODE SUBSTITUTIONS)")
                                subs
                                env)
 
-      (unless (exception-type-p exception-ty env)
-        (tc-error
-         "Invalid throw"
-         (tc-note
-          expr-node
-          "Argument to `throw` must be a known exception.")
-         (tc-note
-          expr-node
-          "Not Yet Supported: throw polymorphism.")))
-      
+      (let ((exception-ty (tc:apply-substitution subs exception-ty))
+            (exception-class (exception-class-name)))
+        (cond
+          ;; A known type must be an exception type.
+          ((not (tc:tyvar-p exception-ty))
+           (unless (exception-type-p exception-ty env)
+             (tc-error
+              "Invalid throw"
+              (tc-note
+               expr-node
+               "type '~A' is not an exception type"
+               (type-object-string exception-ty env)))))
+
+          ;; Otherwise, require an Exception instance, which makes THROW
+          ;; polymorphic over exception types.
+          ((and exception-class
+                (tc:lookup-class (tc-env-env env) exception-class :no-error t))
+           (push (tc:make-ty-predicate
+                  :class exception-class
+                  :types (list exception-ty)
+                  :location (source:location node))
+                 preds))
+
+          (t
+           (tc-error
+            "Invalid throw"
+            (tc-note
+             expr-node
+             "Argument to `throw` must be a known exception.")))))
+
       (values
        expected-type
        preds
@@ -2913,11 +3058,31 @@ Returns (VALUES INFERRED-TYPE PREDICATES NODE SUBSTITUTIONS)")
                                subs
                                env)
 
-      (unless (resumption-type-p resumption-ty env)
-        (tc-error "Invalid resume-to"
-                  (tc-note node "Argument to `resume-to` be a known resumption.")
-                  (tc-note node "Not Yet Supported: resume-to polymorphism.")))
-      
+      (let ((resumption-ty (tc:apply-substitution subs resumption-ty))
+            (resumption-class (resumption-class-name)))
+        (cond
+          ;; A known type must be a resumption type.
+          ((not (tc:tyvar-p resumption-ty))
+           (unless (resumption-type-p resumption-ty env)
+             (tc-error "Invalid resume-to"
+                       (tc-note expr-node
+                                "type '~A' is not a resumption type"
+                                (type-object-string resumption-ty env)))))
+
+          ;; Otherwise, require a Resumption instance, which makes
+          ;; RESUME-TO polymorphic over resumption types.
+          ((and resumption-class
+                (tc:lookup-class (tc-env-env env) resumption-class :no-error t))
+           (push (tc:make-ty-predicate
+                  :class resumption-class
+                  :types (list resumption-ty)
+                  :location (source:location node))
+                 preds))
+
+          (t
+           (tc-error "Invalid resume-to"
+                     (tc-note expr-node "Argument to `resume-to` must be a known resumption.")))))
+
       (values
        expected-type
        preds
@@ -4287,7 +4452,9 @@ as a recursive function rather than a recursive value."
                    := (loop :for name :in scc
                             :collect (gethash name impl-bindings))
                  :append (multiple-value-bind (preds_ nodes subs_)
-                             (infer-impls-binding-type bindings subs env :generalize generalize)
+                             (with-fundep-errors
+                                 ((source:location (parser:binding-name (first bindings))) env)
+                               (infer-impls-binding-type bindings subs env :generalize generalize))
                            (setf subs subs_)
                            (setf preds (append preds preds_))
                            nodes)))
@@ -4302,15 +4469,17 @@ as a recursive function rather than a recursive value."
                  :for unparsed-ty := (gethash name dec-table)
 
                  :collect (multiple-value-bind (preds_ node_ subs_)
-                              (funcall (if generalize
-                                           #'infer-expl-binding-type
-                                           #'infer-monomorphic-binding-type)
-                                       binding
-                                                       scheme
-                                                       (source:location
-                                                        (parser:binding-name binding))
-                                                       subs
-                                                       env)
+                              (with-fundep-errors
+                                  ((source:location (parser:binding-name binding)) env)
+                                (funcall (if generalize
+                                             #'infer-expl-binding-type
+                                             #'infer-monomorphic-binding-type)
+                                         binding
+                                         scheme
+                                         (source:location
+                                          (parser:binding-name binding))
+                                         subs
+                                         env))
                             (setf subs subs_)
                             (setf preds (append preds preds_))
                             node_))))
@@ -4454,15 +4623,13 @@ as a recursive function rather than a recursive value."
                          declared-instantiation-types))
 
                (output-qual-type (tc:qualify expr-preds expr-type))
-               (output-scheme (if declared-explicit-p
-                                  (tc:quantify-using-tvar-order
-                                   (remove-if-not
-                                    (lambda (declared-tvar)
-                                      (find declared-tvar generalizable-tvars :test #'tc:ty=))
-                                    ordered-explicit-tvars)
-                                   output-qual-type
-                                   t)
-                                  (tc:quantify generalizable-tvars output-qual-type))))
+               (quantified-tvars (if declared-explicit-p
+                                     (remove-if-not
+                                      (lambda (declared-tvar)
+                                        (find declared-tvar generalizable-tvars :test #'tc:ty=))
+                                      ordered-explicit-tvars)
+                                     generalizable-tvars))
+               (outer-tvars env-tvars))
 
           (let* ((expr-preds (tc:apply-substitution subs expr-preds))
                  (preds (tc:apply-substitution subs preds))
@@ -4523,8 +4690,8 @@ as a recursive function rather than a recursive value."
 
             (multiple-value-setq (preds subs)
               (tc:default-builder-context (tc-env-env env) (append env-tvars local-tvars) preds subs))
-            ;; Expanding a builder can expose requirements already supplied by
-            ;; the declaration, such as RuntimeRepr for a polymorphic element.
+            ;; Expanding a builder can expose its instance's element
+            ;; constraints, which the declaration may already supply.
             (setf preds
                   (remove-if
                    (lambda (p) (tc:entail (tc-env-env env) (tc:apply-substitution subs expr-preds) p))
@@ -4577,9 +4744,27 @@ as a recursive function rather than a recursive value."
                 (when (and (parser:binding-toplevel-p binding) deferred-preds)
                   (error-unknown-pred (first deferred-preds)))
 
-                ;; Check that the declared and inferred schemes match
-                (let ((declared-output-scheme (tc:apply-substitution subs declared-ty)))
-                  (setf output-scheme (tc:apply-substitution subs output-scheme))
+                ;; Check that the declared and inferred schemes match.
+                ;; Defaulting can bind variables of the inferred type, so
+                ;; quantify its final form. A variable bound to a type, to
+                ;; another quantified variable, or to a variable of the
+                ;; environment is then no longer quantified, which makes
+                ;; the declaration too general.
+                (let* ((declared-output-scheme (tc:apply-substitution subs declared-ty))
+                       (outer-tvars (tc:type-variables (tc:apply-substitution subs outer-tvars)))
+                       (quantified-tvars
+                         (remove-duplicates
+                          (remove-if (lambda (ty)
+                                       (or (not (tc:tyvar-p ty))
+                                           (find ty outer-tvars :test #'tc:ty=)))
+                                     (tc:apply-substitution subs quantified-tvars))
+                          :test #'tc:ty=
+                          :from-end t))
+                       (output-qual-type (tc:apply-substitution subs output-qual-type))
+                       (output-scheme
+                         (if declared-explicit-p
+                             (tc:quantify-using-tvar-order quantified-tvars output-qual-type t)
+                             (tc:quantify quantified-tvars output-qual-type))))
                   (unless (tc:ty-scheme= declared-output-scheme output-scheme)
                     (tc-error "Declared type is too general"
                               (tc-location location

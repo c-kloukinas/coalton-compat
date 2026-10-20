@@ -201,6 +201,7 @@
    #:collect-fundeps                        ; FUNCTION
    #:collect-fundep-vars                    ; FUNCTION
    #:update-instance-fundeps                ; FUNCTION
+   #:check-instance-fundep-consistency      ; FUNCTION
    #:solve-fundeps                          ; FUNCTION
    #:synchronize-type-variable-counter      ; FUNCTION
    ))
@@ -1544,9 +1545,10 @@ updates; use the final list to validate recorded choices in the resulting
 environment before installing it. See *DEFER-INSTANCE-VALIDATION*.")
 
 (defun predicate-subsumes-p (general specific)
-  (handler-case
-      (progn (predicate-match (fresh-pred general) (fresh-pred specific)) t)
-    (predicate-unification-error () nil)))
+  (and (not (predicate-match-impossible-p general specific))
+       (handler-case
+           (progn (predicate-match (fresh-pred general) (fresh-pred specific)) t)
+         (predicate-unification-error () nil))))
 
 (defun same-instance-head-p (left right)
   (and (predicate-subsumes-p left right)
@@ -2062,6 +2064,40 @@ This function will return the single functional dependency
 
   env)
 
+(defun check-instance-fundep-consistency (env pred context)
+  "Signal CONTEXT-FUNDEP-CONFLICT if the head PRED and the CONTEXT of an
+instance, including their superclasses, conflict with functional
+dependencies.
+
+An instance only applies when its context holds, so its head and its
+context must hold together. For example, with the class
+
+  (define-class (C :a :b (:a -> :b)))
+
+the instance (C :a :b => C :a (List :b)) requires C :a :b whenever it
+provides C :a (List :b), but :a cannot determine both :b and (List :b).
+Its context covers the dependent :b, so the coverage check in
+UPDATE-INSTANCE-FUNDEPS accepts it, yet improving with it never
+terminates: every C :a :x determines :x to be (List :y) for some
+C :a :y."
+  (declare (type environment env)
+           (type ty-predicate pred)
+           (type ty-predicate-list context)
+           (values null &optional))
+  (labels ((expand (pred)
+             (let* ((class (lookup-class env (ty-predicate-class pred)))
+                    (subs (predicate-match (ty-class-predicate class) pred)))
+               (cons pred
+                     (loop :for superclass :in (ty-class-superclasses class)
+                           :append (expand (apply-substitution subs superclass)))))))
+    ;; Improvement only unifies existing variables, so this reaches a
+    ;; fixed point.
+    (loop :with preds := (mapcan #'expand (cons pred context))
+          :for subs := nil :then new-subs
+          :for new-subs := (improve-predicate-fundeps env preds subs)
+          :until (equalp new-subs subs)))
+  nil)
+
 (defun error-fundep-conflict (env class pred fundep old-from-tys new-from-tys old-to-tys new-to-tys)
   "Finds a conflicting instance and signals an error"
   (declare (type environment env)
@@ -2414,7 +2450,9 @@ that variable, so this falls back to the full instance list."
                                               (project-elements (fundep-to fundep) class-vars types)
                                               (project-elements (fundep-to fundep) class-vars other-types))))))
                     (coalton-internal-type-error ()
-                      (error 'context-fundep-conflict :first-pred pred :second-pred other))))))
+                      (error 'context-fundep-conflict
+                             :first-pred (apply-substitution subs pred)
+                             :second-pred (apply-substitution subs other)))))))
   subs)
 
 (defun solve-fundeps (env preds subs)
@@ -2423,13 +2461,18 @@ on functional dependencies that constrain them with respect to one
 another, and then this function creates and applies substitutions to
 preds based on functional dependencies that constrain them with
 respect to defined type class instances. The values returned are the
-predicates with all substitutions applied and the new substitutions."
+predicates with all substitutions applied and the new substitutions.
+
+Signal FUNDEP-NONTERMINATION if improvement keeps specializing PREDS
+without reaching a fixed point within +FUNDEP-MAX-DEPTH+ rounds."
   (declare (type environment env)
            (type ty-predicate-list preds)
            (type substitution-list subs)
            (values ty-predicate-list substitution-list &optional))
 
-  (let ((class-cache (make-hash-table :test #'eq))
+  (let ((input-preds preds)
+        (input-subs subs)
+        (class-cache (make-hash-table :test #'eq))
         (fundepsp-cache (make-hash-table :test #'eq))
         (instance-index-cache (make-hash-table :test #'eq)))
     (labels ((class-for (class-name)
@@ -2498,7 +2541,13 @@ predicates with all substitutions applied and the new substitutions."
                   :for _subs := (predicate-match (ty-class-predicate class) applied-pred)
                   :do (alexandria:nconcf
                        remaining-preds
-                       (mapcar (alexandria:curry #'apply-substitution _subs)
+                       ;; Superclass predicates have no source location of
+                       ;; their own, so report them where PRED arises.
+                       (mapcar (lambda (superclass)
+                                 (make-ty-predicate
+                                  :class (ty-predicate-class superclass)
+                                  :types (apply-substitution _subs (ty-predicate-types superclass))
+                                  :location (source:location pred)))
                                (ty-class-superclasses class)))
                   :collect pred))
 
@@ -2507,8 +2556,15 @@ predicates with all substitutions applied and the new substitutions."
       ;; repeated variables in an instance head.
       (loop :with new-subs := nil
             :with preds-generated := nil
+            ;; The caller's predicates under SUBS at the start of each of
+            ;; the last two quarters of the rounds, most recent first.
+            :with snapshots := nil
             :for i :below +fundep-max-depth+
             :do
+               (when (or (= i (floor +fundep-max-depth+ 2))
+                         (= i (floor (* 3 +fundep-max-depth+) 4)))
+                 (push (apply-substitution subs input-preds) snapshots))
+
                ;; Repeat pairwise improvement after instance improvement too:
                ;; either may expose equal determinants for the next pass.
                (setf new-subs (improve-predicate-fundeps env preds subs))
@@ -2524,15 +2580,16 @@ predicates with all substitutions applied and the new substitutions."
                      ;; If there are super-predicates then add those
                      ;; predicates into the list of preds and remove
                      ;; this predicate from the list since it will give
-                     ;; us no new type information. Additionally,
-                     ;; restart the current check to avoid terminating
-                     ;; early when no subs are generated.
+                     ;; us no new type information. The new predicates
+                     ;; are examined in the next round, so every round
+                     ;; reduces each predicate that an instance matches
+                     ;; and rounds measure the depth of the reductions.
                      :for instance := (lookup-class-instance-in-list
                                        pred
                                        instance-candidates
                                        :no-error t)
 
-                     :when instance
+                     :if instance
                        ;; Since we allow for type variables in the
                        ;; constraints which do not appear in the
                        ;; predicate, we need to create a full fresh set of
@@ -2550,21 +2607,21 @@ predicates with all substitutions applied and the new substitutions."
                              (loop :for new-pred :in instance-context :do
                                (push (make-ty-predicate
                                       :class (ty-predicate-class new-pred)
-                                      :types (apply-substitution instance-subs (ty-predicate-types new-pred)))
+                                      :types (apply-substitution instance-subs (ty-predicate-types new-pred))
+                                      :location (source:location pred))
                                      preds))
 
                              (setf preds (remove pred preds :test #'eq))
-                             (setf preds-generated t)
-                             (return))
+                             (setf preds-generated t))
 
-                     :do (multiple-value-bind (improved-subs improvedp)
-                             (improve-predicate-with-index pred new-subs index)
-                           (when improvedp
-                             (setf new-subs improved-subs)
-                             (return)))
-
-                     :when (ty-class-fundeps class)
-                       :do (setf new-subs (generate-fundep-subs% env (apply-substitution new-subs pred) new-subs)))
+                     :else
+                       :do (multiple-value-bind (improved-subs improvedp)
+                               (improve-predicate-with-index pred new-subs index)
+                             (when improvedp
+                               (setf new-subs improved-subs)
+                               (return)))
+                           (when (ty-class-fundeps class)
+                             (setf new-subs (generate-fundep-subs% env (apply-substitution new-subs pred) new-subs))))
                (if (and (not preds-generated)
                         (or (equalp new-subs subs)
                             (null preds)))
@@ -2572,7 +2629,27 @@ predicates with all substitutions applied and the new substitutions."
                    (setf subs new-subs))
                (setf preds-generated nil)
                (setf preds (apply-substitution subs preds))
-            :finally (util:coalton-bug "Fundep solving failed to fixpoint")))))
+            :finally
+               ;; Running out of rounds alone does not show that improvement
+               ;; diverged: reductions through instances can recur without
+               ;; improving anything, and improvement can rename variables
+               ;; without constraining them. Improvement that does not
+               ;; terminate keeps specializing the caller's predicates, which
+               ;; no finite solution allows.
+               (let ((growing
+                       (loop :for input-pred :in input-preds
+                             :for earlier :in (second snapshots)
+                             :for later :in (first snapshots)
+                             :for final :in (apply-substitution subs input-preds)
+                             :unless (or (predicate-subsumes-p later earlier)
+                                         (predicate-subsumes-p final later))
+                               :collect (apply-substitution input-subs input-pred))))
+                 (unless growing
+                   (util:coalton-bug "Fundep solving failed to fixpoint"))
+                 (error 'fundep-nontermination
+                        :preds (remove-duplicates growing
+                                                  :test #'type-predicate=
+                                                  :from-end t)))))))
 
 
 (defun generate-fundep-subs% (env pred subs)
@@ -2618,9 +2695,20 @@ predicates with all substitutions applied and the new substitutions."
       (handler-case
           (let* ((fresh-entry (fresh-fundep-entry entry))
                  (left-subs (match-list from-tys (fundep-entry-from fresh-entry)))
-                 (right-side (apply-substitution left-subs (fundep-entry-to fresh-entry))))
-            (return-from generate-fundep-subs-for-pred% (unify-list subs to-tys right-side)))
-        (unification-error () nil))))
+                 (right-side (apply-substitution left-subs (fundep-entry-to fresh-entry)))
+                 (new-subs (unify-list subs to-tys right-side)))
+            ;; The dependents of an instance can contain variables that only
+            ;; its context determines. Unifying them with dependents that are
+            ;; already as specific merely binds the entry's fresh variables,
+            ;; which would change SUBS in every round without determining
+            ;; anything, so only keep entries that specialize PRED.
+            (unless (predicate-subsumes-p (apply-substitution new-subs pred)
+                                          (apply-substitution subs pred))
+              (return-from generate-fundep-subs-for-pred% new-subs)))
+        ;; The entry does not apply: PRED's determinant is not an instance of
+        ;; the entry's, for example because it differs where the entry repeats
+        ;; a variable, or PRED's dependents conflict with the entry's.
+        (coalton-internal-type-error () nil))))
 
   subs)
 

@@ -52,6 +52,7 @@
                 :serial t
                 :components ((:file "function")
                              (:file "optional")
+                             (:file "resumption")
                              (:file "package")))
                (:module "typechecker"
                 :serial t
@@ -102,6 +103,7 @@
                 :components ((:file "pattern-exhaustiveness")
                              (:file "unused-variables")
                              (:file "underapplied-values")
+                             (:file "discarded-results")
                              (:file "analysis")
                              (:file "package")))
                (:module "codegen"

@@ -165,8 +165,7 @@
   ;; A fallback's context alone cannot select a polymorphic conversion.
   (dolist (program
             '("(declare same (:a -> :a)) (define (same x) (into x))"
-              "(declare build-seq ((Foldable :f) (coalton/types:RuntimeRepr :a)
-                                    => :f :a -> coalton/seq:Seq :a))
+              "(declare build-seq (Foldable :f => :f :a -> coalton/seq:Seq :a))
                (define (build-seq xs) (into xs))"))
     (signals tc:tc-error (check-coalton-types program)))
   ;; Incomparable heads require overlap even when their contexts differ.
@@ -563,6 +562,18 @@ must be distinguished even though the predicate-only variables are ambiguous."
                   (coalton/iterator:FromIterator :e (Tuple :b :a))
                   => :c * :d -> :e)")))
 
+(deftest fundep-entail-without-declared-predicate ()
+  ;; A declaration lacking a predicate with a functional dependency is missing
+  ;; that predicate, which must be reported as such.
+  (signals tc:tc-error
+    (check-coalton-types
+     "(define-class (C :a :b (:a -> :b))
+        (m (:a -> :b)))
+      (declare ignored (:b -> Boolean))
+      (define (ignored _) True)
+      (declare f (:a -> Boolean))
+      (define (f x) (ignored (m x)))")))
+
 (deftest fundep-nested-entail ()
   ;; see https://github.com/coalton-lang/coalton/issues/1717
   (check-coalton-types
@@ -678,3 +689,189 @@ must be distinguished even though the predicate-only variables are ambiguous."
     (inline)
     (define (use-a wrapper)
       (use-a (.inner-base-type wrapper))))"))
+
+(deftest fundep-instance-conflicts-with-own-context ()
+  ;; See https://github.com/coalton-lang/coalton/issues/2068
+  (flet ((program (fundep)
+           (format nil
+                   "(define-struct (Env :input :world)
+                      (input :input)
+                      (world :world))
+
+                    (define-type (Decision :act :final)
+                      (Done :final)
+                      (StepAct :act))
+
+                    (define-class ((Monad :m) => Foo :m :act :input :world :final ~A)
+                      (call-model (:input -> :m (Decision :act :final)))
+                      (exec-action (:act * (Env :input :world) -> :m (Env :input :world))))
+
+                    (define-instance ((Foo :m :act :input :world :final)
+                                      => Foo (coalton/monad/statet:StateT (Env :input :world) :m)
+                                             :act :input :world :final)
+                      (define (call-model inp)
+                        (coalton/monad/statet:lift-stateT (call-model inp)))
+                      (define (exec-action act env)
+                        (coalton/monad/statet:lift-stateT (exec-action act env))))"
+                   fundep)))
+    ;; The head and its context share the determinant :act, so :m would
+    ;; have to be (StateT (Env :input :world) :m).
+    (is (search "Instance fundep conflict"
+                (handler-case
+                    (progn
+                      (check-coalton-types (program "(:act -> :m :input :world :final)"))
+                      "")
+                  (tc:tc-error (e)
+                    (princ-to-string e)))))
+    (check-coalton-types (program "(:m :input :act -> :world :final)"))
+    (check-coalton-types (program "(:m -> :act :input :world :final)"))))
+
+(deftest fundep-improvement-through-instance-context ()
+  ;; The context of this instance determines the dependent of its head,
+  ;; and improvement through it terminates when the determinant shrinks.
+  (check-coalton-types
+   "(define-type (Vec :a) (Vec :a))
+
+    (define-class (Mul :a :b :c (:a :b -> :c))
+      (mul (:a * :b -> :c)))
+
+    (define-instance (Mul :a :b :c => Mul :a (Vec :b) (Vec :c))
+      (define (mul a (Vec b))
+        (Vec (mul a b))))
+
+    (define (mul-vec x y)
+      (mul x (Vec y)))"
+   '("mul-vec" . "(Mul :a (Vec :b) (Vec :c) => :a * :b -> Vec :c)")))
+
+(deftest fundep-solving-reduces-predicates-together ()
+  ;; Independent instance reductions share a round, so the round limit
+  ;; bounds the depth of improvement rather than the number of predicates.
+  (let ((*package* (make-package (gensym "FUNDEP-BREADTH-") :use '("COALTON" "COALTON-PRELUDE"))))
+    (unwind-protect
+         (let ((source (source:make-source-string "(define-class (C :a :b (:a -> :b)))")))
+           (with-open-stream (stream (source:source-stream source))
+             (let* ((env (nth-value 1 (entry:entry-point
+                                       (parser:with-reader-context stream
+                                         (parser:read-program stream source)))))
+                    (fundep-pred (tc:make-ty-predicate
+                                  :class (intern "C")
+                                  :types (list (tc:make-variable) (tc:make-variable))))
+                    (preds (cons fundep-pred
+                                 (loop :repeat (* 2 tc:+fundep-max-depth+)
+                                       :collect (tc:make-ty-predicate
+                                                 :class 'coalton/classes:Eq
+                                                 :types (list tc:*integer-type*))))))
+               (let ((solved (tc:solve-fundeps env preds nil)))
+                 (is (= 1 (length solved)))
+                 (is (tc:type-predicate= fundep-pred (first solved)))))))
+      (delete-package *package*))))
+
+(deftest fundep-mutually-recursive-instances-do-not-terminate ()
+  ;; Each instance determines its monad through the other class on the
+  ;; same :act, so improving either class never reaches a fixed point.
+  (dolist (use '("(declare f (Foo :m :act => :act -> Unit))
+                  (define (f _) Unit)"
+                 "(define (f x) (foo x))"
+                 ;; TYPE-OF reports internal type errors as type mismatches.
+                 "(define (f x) (type-of (foo x)))"))
+    (is (search "Functional dependency improvement does not terminate"
+                (handler-case
+                    (progn
+                      (check-coalton-types
+                       (concatenate
+                        'string
+                        "(define-type (W1 :a) (W1 :a))
+                         (define-type (W2 :a) (W2 :a))
+                         (define-class (Foo :m :act (:act -> :m))
+                           (foo (:act -> :m)))
+                         (define-class (Bar :m :act (:act -> :m)))
+                         (define-instance (Bar :m :act => Foo (W1 :m) :act)
+                           (define (foo _) (error \"unreachable\")))
+                         (define-instance (Foo :m :act => Bar (W2 :m) :act))"
+                        use))
+                      "")
+                  (tc:tc-error (e)
+                    (princ-to-string e)))))))
+
+(deftest fundep-improvement-with-context-determined-dependents ()
+  ;; The instance context determines the element of the dependent, so
+  ;; improving a predicate whose dependent already has that shape only
+  ;; renames the element. This used to repeat until the round limit.
+  (check-coalton-types
+   "(define-class (C :a :b :c (:a -> :b))
+      (cm (:a * :c -> :b)))
+
+    (define-class (D :a :x (:a -> :x)))
+
+    (define-instance (D :a :x => C :a (List :x) Boolean)
+      (define (cm _ _) Nil))
+
+    (define (f) (cm (the Integer 1) #\\c))
+
+    (declare g (C :a (List String) Char => :a -> Unit))
+    (define (g _) Unit)"
+   '("f" . "(C Integer (List :a) Char => Void -> List :a)")))
+
+(deftest fundep-improvement-with-repeated-determinant-variables ()
+  ;; See https://github.com/coalton-lang/coalton/issues/2068. A determinant
+  ;; that repeats a variable only applies to predicates whose types agree
+  ;; there; matching other predicates against it used to escape as an
+  ;; unhandled internal condition.
+  (check-coalton-types
+   "(define-class (C :a :b :c (:a :b -> :c))
+      (cm (:a * :b -> :c)))
+
+    (define-instance (C (List :a) :a String)
+      (define (cm _ _) \"\"))
+
+    (define (f y) (cm (the (List Integer) Nil) y))
+
+    (define (g) (cm (the (List Integer) Nil) (the Integer 1)))"
+   '("f" . "(C (List Integer) :a :b => :a -> :b)")
+   '("g" . "(Void -> String)"))
+  (check-coalton-types
+   "(define-struct (Env :input :world)
+      (input :input)
+      (world :world))
+
+    (define-type (Decision :act :final)
+      (Done :final)
+      (StepAct :act))
+
+    (define-class ((Monad :m) => Foo :m :act :input :world :final
+                   (:m :input :act -> :world :final)
+                   (:m :input :world :final -> :act))
+      (call-model (:input -> :m (Decision :act :final))))
+
+    (define-instance ((Foo :m :act :input :world :final)
+                      => Foo (coalton/monad/statet:StateT (Env :input :world) :m)
+                             :act :input :world :final)
+      (define (call-model inp)
+        (coalton/monad/statet:lift-stateT (call-model inp))))
+
+    (declare use ((Foo (coalton/monad/statet:StateT (Env Integer String) :m) :act :i :w :f)
+                  => :i -> coalton/monad/statet:StateT (Env Integer String) :m (Decision :act :f)))
+    (define (use x) (call-model x))"))
+
+(deftest fundep-conflicting-inferred-predicates ()
+  ;; Both uses of CM share the determinant :a but not its dependent.
+  (dolist (body '("(g (cm x) (cm x))"
+                  ;; TYPE-OF reports internal type errors as type mismatches.
+                  "(type-of (g (cm x) (cm x)))"
+                  "(type-of (rec loop ((i x)) (g (cm i) (cm i))))"))
+    (is (search "Context conflicts with functional dependencies"
+                (handler-case
+                    (progn
+                      (check-coalton-types
+                       (format nil
+                               "(define-class (C :a :b (:a -> :b))
+                                  (cm (:a -> :b)))
+
+                                (declare g (String * Integer -> Unit))
+                                (define (g _ _) Unit)
+
+                                (define (f x) ~A)"
+                               body))
+                      "")
+                  (tc:tc-error (e)
+                    (princ-to-string e)))))))

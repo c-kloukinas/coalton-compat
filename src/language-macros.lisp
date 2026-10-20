@@ -87,6 +87,28 @@ Note that this may copy the object or allocate memory."
              `(fn (,lexpr)
                 (the ,type (,unwrap (,try-into ,lexpr))))))))
 
+(define-expression-macro need (expr)
+  "Take the value held by EXPR, a `Fallible` container such as a `Result` or an `Optional`. If EXPR holds a failure instead, such as an `Err` or `None`, return that failure from the enclosing function, whose result must be a container of the same kind.
+
+    (need <expr>)
+
+is equivalent to
+
+    (match (split-failure <expr>)
+      ((Ok value) value)
+      ((Err failure) (return failure)))
+
+`need` does not catch exceptions; use `coalton/result:try` to turn thrown exceptions into `Result` values first."
+  (cl:let ((split-failure (cl:ignore-errors (cl:find-symbol "SPLIT-FAILURE" "COALTON/CLASSES")))
+           (ok (cl:ignore-errors (cl:find-symbol "OK" "COALTON/CLASSES")))
+           (err (cl:ignore-errors (cl:find-symbol "ERR" "COALTON/CLASSES"))))
+    (cl:assert (cl:and split-failure ok err) ()
+               "`need` macro does not have access to `split-failure` yet.")
+    (alexandria:with-gensyms (value failure)
+      `(match (,split-failure ,expr)
+         ((,ok ,value) ,value)
+         ((,err ,failure) (return ,failure))))))
+
 (define-expression-macro nest (cl:&rest items)
   "A syntactic convenience for function application. Transform
 
@@ -149,22 +171,24 @@ Coalton boolean."
   `(cl:and ,expr cl:t))
 
 (define-expression-macro assert (datum cl:&optional (format-string "") cl:&rest format-data)
-  "Signal an error unless `datum` is `True`.
+  "Signal a `Panic` unless `datum` is `True`.
 
-If the assertion fails, the signaled error will apply the `format-data`
-to the `format-string` via `cl:format` to produce an error message."
+If the assertion fails, the panic's message describes `datum` and applies the
+`format-data` to the `format-string` via `cl:format`."
   ;; OPTIMIZE: lazily evaluate the FORMAT-DATA only when the assertion fails
   (cl:check-type format-string cl:string)
   (cl:let* ((datum-temp (cl:gensym "ASSERT-DATUM-"))
             (format-data-temps (alexandria:make-gensym-list (cl:length format-data)
-                                                            "ASSERT-FORMAT-DATUM-")))
+                                                            "ASSERT-FORMAT-DATUM-"))
+            (panic (cl:find-symbol "PANIC" "COALTON/CLASSES"))
+            (message `(cl:format cl:nil "Assertion ~A failed: ~?"
+                                 ',datum ,format-string (cl:list ,@format-data-temps))))
     `(let ((,datum-temp ,datum)
            ,@(cl:mapcar #'cl:list format-data-temps format-data))
        (progn
          (lisp (-> :any) (,datum-temp ,@format-data-temps)
-           (cl:assert ,datum-temp ()
-                      ,(cl:format cl:nil
-                                  "Assertion ~a failed: ~a"
-                                  datum format-string)
-                      ,@format-data-temps))
+           (cl:unless ,datum-temp
+             ,(cl:if panic
+                     `(cl:error ',panic :message ,message)
+                     `(cl:error "~A" ,message))))
          Unit))))

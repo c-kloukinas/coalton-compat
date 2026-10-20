@@ -20,6 +20,7 @@ an error or or something is unclear, please fix it and submit a PR.
 - [Macros](/manual/topics/macros/)
 - [Lisp Interop](/manual/topics/lisp-interop/)
 - [Debugging Operators](/manual/topics/debugging/)
+- [Parallel Programming](/manual/topics/parallel-programming/)
 - [Standard Library Reference](/reference/)
 
 ## Operators And Symbols
@@ -49,10 +50,10 @@ see the [Standard Library Reference](/reference/).
 |  | [`or`](/manual/operators/or/) | [`unless`](/manual/operators/unless/) | [`when`](/manual/operators/when/) |
 | **Looping** | [`break`](/manual/operators/break/) | [`continue`](/manual/operators/continue/) | [`for`](/manual/operators/for/) |
 |  | [`for*`](/manual/operators/for-star/) | [`rec`](/manual/operators/rec/) |  |
-| **Control** | [`<-`](/manual/operators/do-bind/) | [`do`](/manual/operators/do/) | [`progn`](/manual/operators/progn/) |
-|  | [`return`](/manual/operators/return/) |  |  |
-| **Exceptions** | [`catch`](/manual/operators/catch/) | [`resumable`](/manual/operators/resumable/) | [`resume-to`](/manual/operators/resume-to/) |
-|  | [`throw`](/manual/operators/throw/) |  |  |
+| **Control** | [`<-`](/manual/operators/do-bind/) | [`do`](/manual/operators/do/) | [`need`](/manual/operators/need/) |
+|  | [`progn`](/manual/operators/progn/) | [`protect`](/manual/operators/protect/) | [`return`](/manual/operators/return/) |
+| **Exceptions** | [`catch`](/manual/operators/catch/) | [`handle`](/manual/operators/handle/) | [`resumable`](/manual/operators/resumable/) |
+|  | [`resume-to`](/manual/operators/resume-to/) | [`throw`](/manual/operators/throw/) |  |
 | **Convenience** | [`.<`](/manual/operators/compose-right/) | [`.>`](/manual/operators/compose-left/) | [`as`](/manual/operators/as/) |
 |  | [`nest`](/manual/operators/nest/) | [`pipe`](/manual/operators/pipe/) | [`try-as`](/manual/operators/try-as/) |
 |  | [`unwrap-as`](/manual/operators/unwrap-as/) |  |  |

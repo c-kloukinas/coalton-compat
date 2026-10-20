@@ -31,62 +31,130 @@
 
 ;;; CL-side: walk ASDF's own object model to build TreeNodes
 
+(cl:defun %call-with-project-systems (truepath function)
+  "Load the .asd file TRUEPATH and call FUNCTION with the names of the systems
+it defines, while ASDF's registry holds those systems as defined there.
+
+ASDF:LOAD-ASD keeps a system already registered under the same name, so the
+project would show that system's files instead: the editor image registers
+its own systems, such as mine and coalton, as immutable at the paths they were
+built from, and keeps the systems that projects opened before loaded. Load
+into a copy of the registry without the project's systems and their secondary
+systems. Afterwards, add the other systems loaded on the way, such as those of
+:DEFSYSTEM-DEPENDS-ON, to ASDF's registry: their code stays loaded, and ASDF
+would otherwise load them again for every parse."
+  (cl:let ((names (%find-all-system-names truepath))
+           (registered asdf::*registered-systems*))
+    (cl:flet ((project-system-p (name)
+                (cl:some (cl:lambda (primary)
+                           (cl:or (cl:string= name primary)
+                                  (cl:and (cl:> (cl:length name) (cl:length primary))
+                                          (cl:string= primary name :end2 (cl:length primary))
+                                          (cl:char= #\/ (cl:char name (cl:length primary))))))
+                         names)))
+      (cl:flet ((copy-without-project-systems (table)
+                  (cl:when table
+                    (cl:let ((copy (cl:make-hash-table :test 'cl:equal)))
+                      (cl:maphash (cl:lambda (name value)
+                                    (cl:unless (project-system-p name)
+                                      (cl:setf (cl:gethash name copy) value)))
+                                  table)
+                      copy))))
+        (cl:let ((asdf::*registered-systems*
+                   (copy-without-project-systems registered))
+                 (asdf::*preloaded-systems*
+                   (copy-without-project-systems asdf::*preloaded-systems*))
+                 (asdf::*immutable-systems*
+                   (copy-without-project-systems asdf::*immutable-systems*)))
+          (cl:unwind-protect
+               (cl:progn
+                 (asdf:load-asd truepath)
+                 ;; The file may be readable only with packages that loading
+                 ;; it defined, such as those of :DEFSYSTEM-DEPENDS-ON.
+                 (cl:setf names (cl:or (%find-all-system-names truepath) names))
+                 (cl:funcall function names))
+            (cl:maphash (cl:lambda (name system)
+                          (cl:unless (cl:or (project-system-p name)
+                                            (cl:eq system (cl:gethash name registered)))
+                            (cl:setf (cl:gethash name registered) system)))
+                        asdf::*registered-systems*)))))))
+
 (cl:defun %asd-path-to-tree (asd-path)
-  "Given a path to a .asd file, find all systems and build a tree."
+  "Given a path to a .asd file, find all systems and build a tree.
+The tree lists the .asd file itself first, so that it can be opened from there."
   (cl:handler-case
-      (cl:let* ((truepath (cl:truename (cl:pathname asd-path)))
-                ;; Load the .asd so ASDF knows about the systems
-                (__ (asdf:load-asd truepath))
-                ;; Find ALL system names defined in this file
-                (sys-names (%find-all-system-names truepath)))
-        (cl:declare (cl:ignore __))
-        (cl:when sys-names
-          ;; Build a tree node for each system that has components
-          (cl:let* ((sys-trees
-                      (cl:remove cl:nil
-                        (cl:mapcar
-                         (cl:lambda (name)
-                           (cl:let ((sys (asdf:find-system name cl:nil)))
-                             (cl:when sys (%system-to-tree sys))))
-                         sys-names)))
-                    (root-name (cl:file-namestring truepath)))
-            (cl:if (cl:= (cl:length sys-trees) 1)
-                   ;; Single system: use it directly
-                   (cl:first sys-trees)
-                   ;; Multiple systems: wrap in a root node
-                   (mine/pane/tree:TreeDir root-name sys-trees coalton:True)))))
+      (cl:let ((truepath (cl:truename (cl:pathname asd-path))))
+        (%call-with-project-systems
+         truepath
+         (cl:lambda (sys-names)
+           (cl:when sys-names
+             (cl:let ((systems (cl:remove cl:nil (cl:mapcar #'asdf:registered-system sys-names)))
+                      (asd-file (mine/pane/tree:TreeFile (cl:file-namestring truepath)
+                                                         (cl:namestring truepath))))
+               (cl:if (cl:= (cl:length systems) 1)
+                      ;; Single system: use it directly
+                      (%system-to-tree (cl:first systems) (cl:list asd-file))
+                      ;; Multiple systems: wrap them in a node named for the project
+                      (mine/pane/tree:TreeDir
+                       (cl:or (cl:pathname-name truepath) (cl:file-namestring truepath))
+                       (cl:cons asd-file (cl:mapcar #'%system-to-tree systems))
+                       coalton:True)))))))
     (cl:error (c)
       (cl:format cl:*error-output* "~&;; asdf-parser error: ~A~%" c)
       (cl:force-output cl:*error-output*)
       cl:nil)))
 
 (cl:defun %find-all-system-names (path)
-  "Read the .asd file and return a list of all defsystem names."
+  "Read the .asd file and return a list of all defsystem names.
+Read it as ASDF:LOAD-ASD loads it: in ASDF-USER, following IN-PACKAGE forms
+whose packages exist, with *LOAD-PATHNAME* and *LOAD-TRUENAME* naming the
+file. Read-time evaluation in .asd files, such as #.(asdf-version) or
+#.(read-file-string (subpathname *load-pathname* \"README.md\")), relies on
+that."
   (cl:handler-case
-      (cl:with-open-file (s path :direction :input)
-        (cl:let ((eof (cl:gensym))
-                 (names cl:nil))
-          (cl:loop
-            (cl:let ((form (cl:read s cl:nil eof)))
-              (cl:when (cl:eq form eof)
-                (cl:return (cl:nreverse names)))
-              (cl:when (cl:and (cl:consp form)
-                               (cl:symbolp (cl:car form))
-                               (cl:string-equal (cl:symbol-name (cl:car form))
-                                                "DEFSYSTEM"))
-                (cl:let ((raw-name (cl:cadr form)))
-                  (cl:push (cl:etypecase raw-name
-                             (cl:string raw-name)
-                             (cl:symbol (cl:string-downcase
-                                         (cl:symbol-name raw-name))))
-                           names)))))))
+      (cl:let ((truename (cl:truename path))
+               (readtable cl:*readtable*))
+        (cl:with-open-file (s truename
+                              :direction ':input
+                              :external-format (uiop:encoding-external-format
+                                                (uiop:detect-encoding truename)))
+          (cl:with-standard-io-syntax
+            (cl:let ((cl:*readtable* readtable)
+                     (cl:*package* (cl:find-package "ASDF-USER"))
+                     (cl:*load-pathname* truename)
+                     (cl:*load-truename* truename)
+                     (cl:*default-pathname-defaults*
+                       (uiop:pathname-directory-pathname truename))
+                     (eof (cl:gensym))
+                     (names cl:nil))
+              (cl:loop
+                (cl:let ((form (cl:read s cl:nil eof)))
+                  (cl:when (cl:eq form eof)
+                    (cl:return (cl:nreverse names)))
+                  (cl:when (cl:and (cl:consp form)
+                                   (cl:symbolp (cl:car form)))
+                    (cl:cond
+                      ((cl:string-equal (cl:symbol-name (cl:car form)) "IN-PACKAGE")
+                       ;; Before the file is loaded, a package it defines is missing.
+                       (cl:let ((package (cl:ignore-errors
+                                          (cl:find-package (cl:second form)))))
+                         (cl:when package
+                           (cl:setf cl:*package* package))))
+                      ((cl:string-equal (cl:symbol-name (cl:car form)) "DEFSYSTEM")
+                       (cl:let ((raw-name (cl:cadr form)))
+                         (cl:push (cl:etypecase raw-name
+                                    (cl:string raw-name)
+                                    (cl:symbol (cl:string-downcase
+                                                (cl:symbol-name raw-name))))
+                                  names)))))))))))
     (cl:error () cl:nil)))
 
-(cl:defun %system-to-tree (sys)
-  "Convert an ASDF system object into a TreeDir node."
+(cl:defun %system-to-tree (sys cl:&optional leading-nodes)
+  "Convert an ASDF system object into a TreeDir node, with LEADING-NODES
+before its components."
   (cl:let* ((name (asdf:component-name sys))
             (children (%children-to-tree-nodes sys)))
-    (mine/pane/tree:TreeDir name children coalton:True)))
+    (mine/pane/tree:TreeDir name (cl:append leading-nodes children) coalton:True)))
 
 (cl:defun %children-to-tree-nodes (parent)
   "Convert the children of an ASDF component into a list of TreeNodes."
@@ -120,16 +188,16 @@
 (cl:defun %parse-asd-file-impl (asd-path)
   "Parse an .asd file and return a SystemDef, or NIL on error."
   (cl:handler-case
-      (cl:let* ((truepath (cl:truename (cl:pathname asd-path)))
-                (__ (asdf:load-asd truepath))
-                (sys-names (%find-all-system-names truepath)))
-        (cl:declare (cl:ignore __))
-        (cl:when sys-names
-          ;; Use the first (primary) system
-          (cl:let ((sys (asdf:find-system (cl:first sys-names) cl:nil))
-                   (asd-dir (cl:directory-namestring truepath)))
-            (cl:when sys
-              (%system-to-sysdef sys asd-dir)))))
+      (cl:let ((truepath (cl:truename (cl:pathname asd-path))))
+        (%call-with-project-systems
+         truepath
+         (cl:lambda (sys-names)
+           (cl:when sys-names
+             ;; Use the first (primary) system
+             (cl:let ((sys (asdf:registered-system (cl:first sys-names)))
+                      (asd-dir (cl:directory-namestring truepath)))
+               (cl:when sys
+                 (%system-to-sysdef sys asd-dir)))))))
     (cl:error (c)
       (cl:format cl:*error-output* "~&;; parse-asd-file error: ~A~%" c)
       (cl:force-output cl:*error-output*)
